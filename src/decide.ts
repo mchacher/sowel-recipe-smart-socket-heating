@@ -5,8 +5,8 @@
 
 /** FR4 — sockets on at setpoint − 0.2 °C, off at setpoint + 0.2 °C. */
 export const HALF_HYSTERESIS = 0.2;
-/** FR6 — every socket off at or above this temperature. */
-export const MAX_TEMP = 25;
+/** FR6 — every socket off at or above this temperature: 2 °C above the highest setpoint allowed (spec 004). */
+export const MAX_TEMP = 28;
 /** FR7 — a sensor with no report for this long is silent. */
 export const SILENT_MS = 90 * 60_000;
 /** FR5 — a regulation switch of a socket waits this long after the previous one. */
