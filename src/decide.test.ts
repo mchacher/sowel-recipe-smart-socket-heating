@@ -13,7 +13,7 @@ function snap(over: Partial<Snapshot> = {}): Snapshot {
     hold: false,
     temperature: 19,
     temperatureAt: now.getTime() - 5 * MIN,
-    setpoints: { comfortTemp: 20, ecoTemp: 17, night: null },
+    setpoints: { comfortTemp: 20, ecoTemp: 17, night: null, cocoonTemp: null },
     ...over,
   };
 }
@@ -48,7 +48,9 @@ describe("decide — regulation (FR3, FR4)", () => {
 
   it("holds the night setpoint over the window whatever the presence", () => {
     const now = new Date(2026, 9, 24, 23, 30);
-    const d = decide(snap({ now, setpoints: { comfortTemp: 20, ecoTemp: 17, night: NIGHT } }));
+    const d = decide(
+      snap({ now, setpoints: { comfortTemp: 20, ecoTemp: 17, night: NIGHT, cocoonTemp: null } }),
+    );
     expect(d).toMatchObject({ status: "night", setpoint: 15 });
   });
 
@@ -64,7 +66,7 @@ describe("decide — regulation (FR3, FR4)", () => {
         now,
         mode: "comfort",
         occupied: false,
-        setpoints: { comfortTemp: 20, ecoTemp: 17, night: NIGHT },
+        setpoints: { comfortTemp: 20, ecoTemp: 17, night: NIGHT, cocoonTemp: null },
       }),
     );
     expect(d).toMatchObject({ status: "comfort", setpoint: 20 });
@@ -128,5 +130,36 @@ describe("inWindow", () => {
   it("handles a window within the day", () => {
     expect(inWindow(new Date(2026, 9, 24, 13, 0), "12:00", "14:00")).toBe(true);
     expect(inWindow(new Date(2026, 9, 24, 14, 0), "12:00", "14:00")).toBe(false);
+  });
+});
+
+describe("decide — cocoon (spec 002 FR2)", () => {
+  const sp = { comfortTemp: 20, ecoTemp: 17, night: NIGHT, cocoonTemp: 23 };
+
+  it("regulates around the cocoon setpoint", () => {
+    expect(decide(snap({ mode: "cocoon", temperature: 22.7, setpoints: sp }))).toEqual({
+      status: "cocoon",
+      setpoint: 23,
+      want: "on",
+      immediate: false,
+    });
+  });
+
+  it("wins over the night window", () => {
+    const now = new Date(2026, 9, 24, 23, 30);
+    expect(decide(snap({ now, mode: "cocoon", setpoints: sp }))).toMatchObject({
+      status: "cocoon",
+      setpoint: 23,
+    });
+  });
+
+  it("regulates as auto without a cocoon temperature", () => {
+    const d = decide(snap({ mode: "cocoon", setpoints: { ...sp, cocoonTemp: null } }));
+    expect(d).toMatchObject({ status: "comfort", setpoint: 20 });
+  });
+
+  it("still yields to a manual hold and to safety", () => {
+    expect(decide(snap({ mode: "cocoon", hold: true, setpoints: sp })).status).toBe("manual");
+    expect(decide(snap({ mode: "cocoon", temperature: 25, setpoints: sp })).status).toBe("safety");
   });
 });

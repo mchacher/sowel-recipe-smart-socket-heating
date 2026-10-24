@@ -78,6 +78,25 @@ export const SLOTS: RecipeSlotDef[] = [
     group: "night",
     constraints: { min: 5, max: 24 },
   },
+  {
+    id: "cocoonTemp",
+    name: "Cocoon (°C)",
+    description: "Boosted setpoint while cocoon is on (tile or button), until the next absence",
+    type: "number",
+    required: false,
+    group: "cocoon",
+    constraints: { min: 5, max: 24 },
+  },
+  {
+    id: "buttons",
+    name: "Cocoon buttons",
+    description: "Buttons whose press switches cocoon on and off",
+    type: "equipment",
+    required: false,
+    list: true,
+    group: "cocoon",
+    constraints: { equipmentType: "button", crossZone: true },
+  },
 ];
 
 /** FR2 — the mode the tile and the zone page cycle through. */
@@ -88,6 +107,8 @@ export const ACTIONS: RecipeActionDef[] = [
     stateKey: "mode",
     options: [
       { value: "auto", label: "Auto" },
+      // Right after auto: one tap on the tile starts it (spec 002 FR1).
+      { value: "cocoon", label: "Cocoon" },
       { value: "comfort", label: "Comfort" },
       { value: "eco", label: "Eco" },
       { value: "off", label: "Off" },
@@ -95,16 +116,16 @@ export const ACTIONS: RecipeActionDef[] = [
   },
 ];
 
-export const NAME = "Smart Socket Heating";
+export const NAME = "Socket Heating";
 export const DESCRIPTION =
-  "Heats a room through a smart socket from a temperature sensor: comfort when someone is there, eco after an absence, an optional night setpoint. Cuts at 25 °C and when the sensor goes silent.";
+  "Heats a room through a smart socket from a temperature sensor: comfort when someone is there, eco after an absence, an optional night setpoint, a cocoon boost from the tile or a button. Cuts at 25 °C and when the sensor goes silent.";
 
 export const I18N: Record<string, RecipeLangPack> = {
-  en: { name: NAME, description: DESCRIPTION, groups: { night: "Night" } },
+  en: { name: NAME, description: DESCRIPTION, groups: { night: "Night", cocoon: "Cocoon" } },
   fr: {
-    name: "Chauffage malin sur prise",
+    name: "Chauffage sur prise",
     description:
-      "Chauffe une pièce par une prise connectée à partir d'un capteur de température : confort quand quelqu'un est là, eco après une absence, une consigne de nuit en option. Coupe à 25 °C et quand le capteur se tait.",
+      "Chauffe une pièce par une prise connectée à partir d'un capteur de température : confort quand quelqu'un est là, eco après une absence, une consigne de nuit en option, un cocoon depuis la tuile ou un bouton. Coupe à 25 °C et quand le capteur se tait.",
     slots: {
       zone: { name: "Zone", description: "La zone dont les détecteurs donnent la présence" },
       temperatureSensor: {
@@ -127,7 +148,16 @@ export const I18N: Record<string, RecipeLangPack> = {
         name: "Nuit (°C)",
         description: "Consigne pendant la plage de nuit, présence ou pas",
       },
+      cocoonTemp: {
+        name: "Cocoon (°C)",
+        description:
+          "Consigne boostée quand le cocoon est activé (tuile ou bouton), jusqu'à la prochaine absence",
+      },
+      buttons: {
+        name: "Boutons cocoon",
+        description: "Boutons dont l'appui active et désactive le cocoon",
+      },
     },
-    groups: { night: "Nuit" },
+    groups: { night: "Nuit", cocoon: "Cocoon" },
   },
 };

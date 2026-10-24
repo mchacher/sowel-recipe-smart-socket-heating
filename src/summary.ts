@@ -11,7 +11,7 @@ export type Heat = "heating" | "idle" | "off";
 /** Above this a socket counts as feeding a radiator that heats. */
 export const DRAWING_W = 10;
 
-const LABELS = { comfort: "Confort", eco: "Eco", night: "Nuit" } as const;
+const LABELS = { cocoon: "Cocoon", comfort: "Confort", eco: "Eco", night: "Nuit" } as const;
 
 /** 19.4 → "19,4°", 20 → "20°". */
 export function degrees(v: number): string {
