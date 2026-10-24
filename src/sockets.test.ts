@@ -81,27 +81,86 @@ describe("SocketControl (FR4, FR5, FR12)", () => {
     const world = new FakeWorld().socket();
     world.answer = () => "throw";
     const { control, read } = setup(world);
-    control.apply("on", true, read(), Date.now());
+    const t0 = Date.now();
+    control.apply("on", true, read(), t0);
     await flush();
-    control.apply("on", true, read(), Date.now());
+    control.apply("on", true, read(), t0 + MIN);
     await flush();
+    expect(world.orders).toHaveLength(2);
     expect(world.logs).toHaveLength(1);
     expect(world.logs[0].level).toBe("error");
   });
 
-  it("tells someone else's switch from its own (FR8)", async () => {
+  it("does not resend the same order within a minute, even an immediate one", async () => {
+    const world = new FakeWorld().socket("socket", { state: true });
+    world.answer = () => ({ success: false, error: "offline" });
+    const { control, read } = setup(world);
+    const t0 = Date.now();
+    control.apply("off", true, read(), t0);
+    await flush();
+    expect(control.apply("off", true, read(), t0 + 30_000)).toEqual([]);
+    expect(control.apply("off", true, read(), t0 + MIN)).toEqual(["socket"]);
+  });
+
+  it("logs a switch once the order succeeds, with its note", async () => {
+    const world = new FakeWorld().socket();
+    const { control, read } = setup(world);
+    control.apply("on", false, read(), Date.now(), " à 19° (consigne 20°)");
+    expect(world.logs).toEqual([]);
+    await flush();
+    expect(world.logs).toEqual([
+      { message: "Chauffage allumé (Radiateur Bureau) à 19° (consigne 20°)", level: "info" },
+    ]);
+  });
+
+  it("tells someone else's switch from its own (FR8)", () => {
     const world = new FakeWorld().socket();
     const { control, read } = setup(world);
     control.apply("on", false, read(), Date.now());
-    expect(control.observe("socket", true)).toBe(false);
-    expect(control.observe("socket", false)).toBe(true);
-    expect(control.observe("socket", null)).toBe(false);
+    expect(control.observe("socket", true, false)).toBe(false);
+    expect(control.observe("socket", false, true)).toBe(true);
+    expect(control.observe("socket", null, false)).toBe(false);
+  });
+
+  it("never counts an unchanged report", () => {
+    const world = new FakeWorld().socket();
+    const { control } = setup(world);
+    expect(control.observe("socket", true, true)).toBe(false);
+  });
+
+  it("a stale report while its order is in flight is not someone else's switch", () => {
+    const world = new FakeWorld().socket();
+    const { control, read } = setup(world);
+    control.apply("on", false, read(), Date.now());
+    // A power report republishes the old relay state before the relay's own report.
+    expect(control.observe("socket", false, false)).toBe(false);
+    expect(control.observe("socket", true, false)).toBe(false);
+  });
+
+  it("after a failed order, expects the old state again", async () => {
+    const world = new FakeWorld().socket();
+    world.answer = () => ({ success: false, error: "503" });
+    const { control, read } = setup(world);
+    control.apply("on", false, read(), Date.now());
+    await flush();
+    // Someone switches it on by hand afterwards: that is theirs.
+    expect(control.observe("socket", true, false)).toBe(true);
   });
 
   it("adopts a socket that was offline at start", () => {
     const world = new FakeWorld().socket("socket", { state: null });
     const { control } = setup(world);
-    expect(control.observe("socket", true)).toBe(false);
-    expect(control.observe("socket", false)).toBe(true);
+    expect(control.observe("socket", true, null)).toBe(false);
+    expect(control.observe("socket", false, true)).toBe(true);
+  });
+
+  it("drops the result of an order in flight at stop", async () => {
+    const world = new FakeWorld().socket();
+    world.answer = () => ({ success: false, error: "late" });
+    const { control, read } = setup(world);
+    control.apply("on", false, read(), Date.now());
+    control.stop();
+    await flush();
+    expect(world.logs).toEqual([]);
   });
 });

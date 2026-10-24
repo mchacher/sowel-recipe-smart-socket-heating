@@ -102,8 +102,36 @@ describe("instance", () => {
     expect(world.state.get("hold")).toBeUndefined();
     expect(world.logs.map((l) => l.message)).toEqual([
       "Consigne confort 20° (présence)",
-      "Chauffage allumé à 19° (consigne 20°)",
+      "Chauffage allumé (Radiateur Bureau) à 19° (consigne 20°)",
     ]);
+  });
+
+  it("a failed order followed by an unchanged state report is not a manual switch", async () => {
+    const world = office(19);
+    world.zone.motion = true;
+    world.answer = () => "throw"; // the integration is not connected yet
+    await start(world);
+    // The socket's next power report republishes its unchanged state.
+    world.set("socket", "power", 0);
+    world.set("socket", "state", false);
+    expect(world.state.get("hold")).toBeUndefined();
+    world.answer = () => undefined;
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(world.stateOf()).toBe(true);
+  });
+
+  it("logs a bounded number of lines while the integration is down", async () => {
+    const world = office(19);
+    world.zone.motion = true;
+    world.answer = () => "throw";
+    await start(world);
+    for (let i = 0; i < 10; i++) {
+      world.set("socket", "power", 0);
+      await vi.advanceTimersByTimeAsync(MIN);
+    }
+    expect(world.logs.map((l) => l.level)).toEqual(["info", "error"]);
+    // One attempt a minute at most.
+    expect(world.orders.length).toBeLessThanOrEqual(11);
   });
 
   it("drops to eco once the room has been empty for the timeout", async () => {
@@ -198,7 +226,50 @@ describe("instance", () => {
     });
   });
 
+  describe("hold and the off mode, hold and a silent sensor", () => {
+    it("leaves a socket switched on by hand while the tile is on off", async () => {
+      const world = office(19);
+      const handle = await start(world);
+      handle.onAction?.("set_mode", { mode: "off" });
+      world.set("socket", "state", true);
+      await vi.advanceTimersByTimeAsync(2 * MIN);
+      expect(world.stateOf()).toBe(true);
+      expect(world.orders).toEqual([]);
+      expect(world.state.get("summary")).toBe("Manuel · 19°");
+    });
+
+    it("raises no alert for a silent sensor during a hold", async () => {
+      const world = office(19);
+      world.zone.motion = true;
+      await start(world);
+      world.set("socket", "state", false);
+      await vi.advanceTimersByTimeAsync(95 * MIN);
+      expect(world.state.get("hold")).toBe(true);
+      expect(world.state.get("alert")).toBeUndefined();
+      expect(world.logs.some((l) => l.message.includes("muet"))).toBe(false);
+    });
+  });
+
   describe("mode (FR2)", () => {
+    it("walks the whole cycle: auto, comfort, eco, off, auto", async () => {
+      const world = office(18.5);
+      const handle = await start(world); // empty room: eco 17, the room at 18.5 → off
+      expect(world.state.get("summary")).toBe("Eco 17° · 18,5°");
+      handle.onAction?.("set_mode", { mode: "comfort" });
+      await flush();
+      expect(world.stateOf()).toBe(true);
+      expect(world.state.get("mode")).toBe("comfort");
+      await vi.advanceTimersByTimeAsync(5 * MIN);
+      handle.onAction?.("set_mode", { mode: "eco" });
+      await flush();
+      expect(world.stateOf()).toBe(false);
+      handle.onAction?.("set_mode", { mode: "off" });
+      expect(world.state.get("summary")).toBe("Arrêt");
+      handle.onAction?.("set_mode", { mode: "auto" });
+      expect(world.state.get("mode")).toBe("auto");
+      expect(world.state.get("summary")).toMatch(/^Eco 17°/);
+    });
+
     it("publishes auto from the start so the control renders", async () => {
       const world = office();
       await start(world);
@@ -244,6 +315,33 @@ describe("instance", () => {
     expect(world.state.get("timerExpiresAt")).toBe(new Date(Date.now() + 30 * MIN).toISOString());
     world.motion(true);
     expect(world.state.get("timerExpiresAt")).toBeUndefined();
+    world.motion(false);
+    await vi.advanceTimersByTimeAsync(31 * MIN);
+    expect(world.state.get("timerExpiresAt")).toBeUndefined();
+  });
+
+  it("does not count down over the night window", async () => {
+    vi.setSystemTime(new Date(2026, 9, 24, 23, 0));
+    const world = office(16);
+    world.zone.motion = true;
+    await start(world, { ...PARAMS, nightStart: "22:00", nightEnd: "06:00", nightTemp: "15" });
+    world.motion(false);
+    expect(world.state.get("timerExpiresAt")).toBeUndefined();
+  });
+
+  it("keeps the room occupied after a restart in the middle of a long presence", async () => {
+    const world = office(19);
+    world.zone.motion = true;
+    const handle = await start(world);
+    await vi.advanceTimersByTimeAsync(120 * MIN);
+    world.temp(19.5);
+    handle.stop();
+    // The core comes back with no motion yet.
+    world.zone.motion = false;
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    world.temp(19.5);
+    await start(world);
+    expect(world.state.get("summary")).toMatch(/^Confort 20°/);
   });
 
   it("cuts on a silent sensor and clears the alert on the next reading (FR7)", async () => {

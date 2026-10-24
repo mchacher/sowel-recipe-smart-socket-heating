@@ -1,6 +1,6 @@
 # Spec 001 — Smart socket heating: presence setpoint, on/off regulation, safety cuts
 
-- **Status**: Draft
+- **Status**: In progress (live check AC8 pending)
 - **Date**: 2026-10-24
 - **Related**: `sowel-recipe-presence-thermostat` (the comfort / eco / night logic it mirrors), `sowel-recipe-presence-heater` (pilot-wire heaters, opposite relay convention), core spec 169 / 171 (recipe Dashboard tile and its control)
 - **Installation**: the owner's office — zone Bureau with two PIR sensors (PIR Marc, PIR Elodie), THR_BUREAU (Tuya IH-K009: temperature every 30 min plus on change), Radiateur Bureau (SONOFF S60ZBTPF socket, core type `switch`, with power metering) feeding an electric radiator that has its own thermostat
@@ -60,7 +60,7 @@ Validation (the instance is refused with a clear message):
 
 ### Setpoint
 
-- **FR1 — Presence.** The room is occupied while the zone's aggregated `motion` is true, and for `timeout` after the last motion. The time of the last motion is kept in the instance state, so a restart within the timeout keeps the room occupied. A zone with no motion sensor is logged once at start (the room then always counts as empty).
+- **FR1 — Presence.** The room is occupied while the zone's aggregated `motion` is true, and for `timeout` after the last motion. The time of the last motion is kept in the instance state (when motion ends, every 5 minutes while it lasts, and at stop), so a restart within the timeout keeps the room occupied, even after a long presence. A zone with no motion sensor is logged once at start (the room then always counts as empty).
 - **FR2 — Mode.** The user picks `auto` (default), `comfort`, `eco` or `off` through the `set_mode` cycle action (tile and zone page). The choice is kept in the instance state, survives a restart and lasts until changed.
 - **FR3 — Setpoint in `auto`.** Night window active → `nightTemp`; else occupied → `comfortTemp`; else `ecoTemp`. In `comfort` / `eco` the setpoint is that temperature, presence and night ignored. In `off` there is no setpoint.
 
@@ -72,21 +72,21 @@ Validation (the instance is refused with a clear message):
 ### Safety
 
 - **FR6 — Too hot.** Temperature ≥ 25 °C → every socket off at once, in every mode, a manual hold included (the hold is kept). The tile says so.
-- **FR7 — Silent sensor.** No temperature value, or none received for 90 minutes (the binding's `lastUpdated`) → sockets off at once, `alert` set in the state, one warning in the log. Cleared by the next reading. Not applied during a manual hold (the recipe does not regulate then).
+- **FR7 — Silent sensor.** No temperature value, or none received for 90 minutes (the binding's `lastUpdated`) → sockets off at once, `alert` set in the state, one warning in the log. Cleared by the next reading. Not applied during a manual hold: the recipe does not regulate then, so it raises no alert either (it still clears one).
 
 ### Manual hold
 
-- **FR8 — Detection.** For each socket the recipe keeps the state it expects: the last value it ordered, or the reading at start. A `state` reading that changes to a value different from the expected one is a person (or another automation) switching the socket: the recipe holds. Whoever did it — the Sowel UI, the socket's own button, a mode — is not distinguished. An unknown reading (socket offline) is ignored.
-- **FR9 — During the hold** the recipe sends no order to the sockets, except FR6.
+- **FR8 — Detection.** For each socket the recipe keeps the state it expects: the last value it ordered, or the reading at start. A `state` reading that really changes (its previous value differs: the core relays every report, and a Zigbee2MQTT socket republishes `state` with each power report) to a value different from the expected one is a person (or another automation) switching the socket: the recipe holds. Whoever did it — the Sowel UI, the socket's own button, a mode — is not distinguished. An unknown reading (socket offline) is ignored. A failed order switched nothing: the recipe expects the old state again.
+- **FR9 — During the hold** the recipe sends no order to the sockets, except FR6. The hold wins over the `off` mode too: a radiator switched on by hand while the tile reads Arrêt stays on (picking a mode ends the hold, FR10).
 - **FR10 — End.** The hold ends when the zone has had no motion for `timeout`, counted from the later of the hold's start and the last motion; or when the user picks a mode (FR2). The hold is kept in the state and survives a restart.
 
 ### Visibility
 
 - **FR11 — Tile.** Icon `Flame`, the `set_mode` control. The summary, in French like the owner's other recipes:
-  - `Confort 20° · 19,4° · chauffe` — the label is Confort, Eco or Nuit; the setpoint; the temperature; then `chauffe` when a socket draws power (`power` > 10 W, or `state` on when the socket has no `power` binding), `radiateur au repos` when a socket is on but draws nothing (its own thermostat has cut), nothing when the sockets are off;
+  - `Confort 20° · 19,4° · chauffe` — the label is Confort, Eco or Nuit; the setpoint; the temperature; then `chauffe` when a socket draws power (`power` > 10 W, or `state` on when the socket has no `power` binding or no power reading yet), `radiateur au repos` when a socket is on but draws nothing (its own thermostat has cut), nothing when the sockets are off;
   - `Manuel · 19,4°`, `Arrêt`, `Sécurité · 25,3°`, `Capteur muet`.
-  - `timerExpiresAt`: while the room is occupied with no motion right now, the instant it turns empty (the tile counts it down).
-- **FR12 — Log.** One line per decision change (status, setpoint, sockets switched, hold started or ended, sensor silent or back), never one per tick. A failed order is logged once, then retried at the next evaluation.
+  - `timerExpiresAt`: in `auto`, while comfort is held by the timeout (occupied, no motion right now, outside the night window), the instant it turns empty (the tile counts it down).
+- **FR12 — Log.** One line per decision change (status, setpoint, sockets switched, hold started or ended, sensor silent or back), never one per tick. A switch is logged once its order succeeds. A failed order is logged once; the same order is not sent again to a socket within a minute.
 
 ### Lifecycle
 
@@ -95,13 +95,13 @@ Validation (the instance is refused with a clear message):
 
 ## Acceptance criteria
 
-- [ ] AC1 — Motion in the zone → comfort setpoint; no motion for `timeout` → eco; night window → night setpoint whatever the presence.
-- [ ] AC2 — Below setpoint − 0.2 → sockets on; above setpoint + 0.2 → off; in between unchanged; a second switch within 5 min waits.
-- [ ] AC3 — 25 °C reached → sockets off at once, in every mode.
-- [ ] AC4 — Sensor silent for 90 min → sockets off, `alert` set; a new reading clears it.
-- [ ] AC5 — A socket switched by hand → no order from the recipe until the room has been empty for `timeout`; a mode picked from the tile ends the hold.
-- [ ] AC6 — The tile's control cycles auto → comfort → eco → off; the choice survives a restart.
-- [ ] AC7 — The summary shows `chauffe` / `radiateur au repos` from the socket's power.
+- [x] AC1 — Motion in the zone → comfort setpoint; no motion for `timeout` → eco; night window → night setpoint whatever the presence.
+- [x] AC2 — Below setpoint − 0.2 → sockets on; above setpoint + 0.2 → off; in between unchanged; a second switch within 5 min waits.
+- [x] AC3 — 25 °C reached → sockets off at once, in every mode.
+- [x] AC4 — Sensor silent for 90 min → sockets off, `alert` set; a new reading clears it.
+- [x] AC5 — A socket switched by hand → no order from the recipe until the room has been empty for `timeout`; a mode picked from the tile ends the hold.
+- [x] AC6 — The tile's control cycles auto → comfort → eco → off; the choice survives a restart.
+- [x] AC7 — The summary shows `chauffe` / `radiateur au repos` from the socket's power.
 - [ ] AC8 — Live on the owner's office (candidate instance through a personal source, with the owner's agreement): comfort on arrival, eco after the timeout, a manual switch held, the radiator's own thermostat seen as `radiateur au repos`.
 
 ## Edge cases
@@ -126,7 +126,7 @@ This repository: `README.md` (what the recipe does, its parameters, the radiator
 
 Core `mchacher/sowel`, in the registry PR of the first release:
 
-| Page (EN and FR)                   | Change                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `docs/user/recipes.md` + `.fr.md`  | New row "Smart Socket Heating"; fix the Presence Heater row (it has no setpoints and no away setback)  |
-| `ui/src/i18n/locales/{en,fr}.json` | `recipes.actions.set_mode.auto` (Auto) and `.off` (Off / Arrêt), so the tile's control reads in French |
+| Page                                                | Change                                                                                                 |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `docs/user/recipes.md` (EN only: no FR page exists) | New row "Smart Socket Heating"; fix the Presence Heater row (it has no setpoints and no away setback)  |
+| `ui/src/i18n/locales/{en,fr}.json`                  | `recipes.actions.set_mode.auto` (Auto) and `.off` (Off / Arrêt), so the tile's control reads in French |

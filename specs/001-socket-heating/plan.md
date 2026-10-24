@@ -2,13 +2,13 @@
 
 ## Steps
 
-- [ ] 1. Repository tooled like the core: CI, gitleaks, husky, Prettier, specs checks, `CLAUDE.md`, skills; GitHub repo and `main-protection` ruleset.
-- [ ] 2. `presence.ts`, `decide.ts`, `summary.ts` (pure) + tests.
-- [ ] 3. `inputs.ts`, `sockets.ts` + tests against a fake ctx.
-- [ ] 4. `index.ts` (lifecycle, events, tick, `set_mode`, tile, i18n) + tests with fake timers.
-- [ ] 5. Manifest, README, changelog.
+- [x] 1. Repository tooled like the core: CI, gitleaks, husky, Prettier, specs checks, `CLAUDE.md`, skills; GitHub repo and `main-protection` ruleset.
+- [x] 2. `presence.ts`, `decide.ts`, `summary.ts` (pure) + tests.
+- [x] 3. `inputs.ts`, `sockets.ts` + tests against a fake ctx.
+- [x] 4. `index.ts` (lifecycle, events, tick, `set_mode`, tile, i18n) + tests with fake timers.
+- [x] 5. Manifest, README, changelog.
 - [ ] 6. Candidate instance on the owner's office through a personal source (spec 136), with the owner's agreement (AC8).
-- [ ] 7. Release v0.1.0, then the core PR: registry entry (`owner`, `sha256`), docs EN/FR, the two `set_mode` labels.
+- [ ] 7. Release v0.1.0, then the core PR: registry entry (`owner`, `sha256`), `docs/user/recipes.md`, the two `set_mode` labels.
 
 ## Test plan
 
@@ -56,4 +56,15 @@
 | index    | `timerExpiresAt` while occupied without motion; removed when empty or motion                   | set / deleted                                                    |
 | index    | Validation: missing `state` order, eco > comfort, night half-configured, nightStart = nightEnd | refused with a message                                           |
 | index    | 60 ticks with nothing changing                                                                 | no log line, no order                                            |
+| sockets  | Unchanged report; stale report while the order is in flight                                    | not a manual switch                                              |
+| sockets  | Failed order, then a person switches the socket                                                | manual switch                                                    |
+| sockets  | Same immediate order within a minute                                                           | not resent                                                       |
+| sockets  | Order in flight at `stop()`                                                                    | its result is dropped, no log                                    |
+| index    | Failed order (integration down), then an unchanged state report                                | no hold; the order is sent again a minute later                  |
+| index    | Integration down for 10 min                                                                    | one decision line and one error line                             |
+| index    | Mode `off`, socket switched on by hand                                                         | left on, `Manuel`                                                |
+| index    | Silent sensor during a hold                                                                    | no alert, no "chauffage coupé" line                              |
+| index    | Full cycle auto → comfort → eco → off → auto                                                   | each mode applied                                                |
+| index    | Night window, room occupied without motion                                                     | no countdown                                                     |
+| index    | Restart after 2 h of motion, zone back without motion                                          | still occupied                                                   |
 | index    | `stop()`                                                                                       | timers cleared, handlers unsubscribed, no order                  |

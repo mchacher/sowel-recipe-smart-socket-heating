@@ -72,19 +72,21 @@ export class FakeWorld {
     });
   }
 
-  /** A sensor report: value and `lastUpdated` move, an event fires when the value changed. */
+  /** A sensor report. */
   temp(value: number | null, id = "sensor"): void {
-    const eq = this.equipments.get(id)!;
-    eq.lastUpdated.temperature = coreInstant(Date.now());
     this.set(id, "temperature", value);
   }
 
-  /** Change a value and fire `equipment.data.changed` when it changed, like the core. */
+  /**
+   * A report: the value and its `lastUpdated` move, and `equipment.data.changed`
+   * fires whether the value changed or not — the core relays every report (a
+   * Zigbee2MQTT socket republishes `state` with each power report).
+   */
   set(equipmentId: string, alias: string, value: unknown): void {
     const eq = this.equipments.get(equipmentId)!;
     const previous = eq.data[alias];
     eq.data[alias] = value;
-    if (previous === value) return;
+    eq.lastUpdated[alias] = coreInstant(Date.now());
     this.emit("equipment.data.changed", {
       type: "equipment.data.changed",
       equipmentId,

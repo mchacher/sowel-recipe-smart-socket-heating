@@ -45,14 +45,16 @@ Evaluated top to bottom, first match wins. `T` is the temperature, `S` the setpo
 | #   | Condition                               | Status                      | Sockets | Immediate |
 | --- | --------------------------------------- | --------------------------- | ------- | --------- |
 | 1   | `T` known and ≥ 25 °C                   | `safety`                    | off     | yes       |
-| 2   | mode `off`                              | `off`                       | off     | yes       |
-| 3   | manual hold                             | `manual`                    | leave   | —         |
+| 2   | manual hold                             | `manual`                    | leave   | —         |
+| 3   | mode `off`                              | `off`                       | off     | yes       |
 | 4   | `T` unknown or older than 90 min        | `silent`                    | off     | yes       |
 | 5   | otherwise: `S` per FR3; `T` ≤ `S` − 0.2 | `comfort` / `eco` / `night` | on      | no        |
 | 6   | `T` ≥ `S` + 0.2                         | idem                        | off     | no        |
 | 7   | in between                              | idem                        | leave   | —         |
 
-Not immediate → the minimum cycle (5 min since the recipe last switched that socket) applies.
+Not immediate → the minimum cycle (5 min since the recipe last switched that socket) applies. Immediate or not, the same order is not sent again to a socket within a minute (`RETRY_MS`).
+
+The manual hold (row 2) ranks above the `off` mode: a person's switch is never undone, except by the safety cut. Picking a mode ends the hold.
 
 ## Files
 

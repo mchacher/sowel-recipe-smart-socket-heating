@@ -24,6 +24,8 @@ import type {
 export const RECIPE_ID = "smart-socket-heating";
 export const TICK_MS = 60_000;
 export const ALERT_SILENT = "Capteur de température muet";
+/** While motion lasts, its time is persisted at most this often. */
+export const MOTION_PERSIST_MS = 5 * 60_000;
 
 const TEMP_MIN = 5;
 const TEMP_MAX = 24;
@@ -147,6 +149,7 @@ class Instance implements RecipeInstanceHandle {
   private lastMotionAt: number | null;
   private silent = false;
   private lastDecisionKey = "";
+  private persistedMotionAt = 0;
   private stopped = false;
   private readonly sockets: SocketControl;
   private readonly names = new Map<string, string>();
@@ -193,7 +196,10 @@ class Instance implements RecipeInstanceHandle {
   }
 
   stop(): void {
+    // FR1 — a core restarting mid-presence keeps the room occupied for `timeout`.
+    if (!this.stopped && this.motion) this.persistLastMotion(Date.now());
     this.stopped = true;
+    this.sockets.stop();
     clearInterval(this.tick);
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
@@ -227,13 +233,16 @@ class Instance implements RecipeInstanceHandle {
     if (e.zoneId !== this.p.zoneId) return;
     const motion = e.aggregatedData?.motion ?? false;
     if (motion === this.motion) return;
-    if (!motion) {
-      // FR1 — the room stays occupied for `timeout` from here; a restart keeps it.
-      this.lastMotionAt = Date.now();
-      this.ctx.state.set("lastMotionAt", new Date(this.lastMotionAt).toISOString());
-    }
+    // FR1 — the room stays occupied for `timeout` from the end of motion; a restart keeps it.
+    this.persistLastMotion(Date.now());
     this.motion = motion;
     this.evaluate();
+  }
+
+  private persistLastMotion(at: number): void {
+    this.lastMotionAt = at;
+    this.persistedMotionAt = at;
+    this.ctx.state.set("lastMotionAt", new Date(at).toISOString());
   }
 
   private onData(e: DataChangedEvent): void {
@@ -243,7 +252,8 @@ class Instance implements RecipeInstanceHandle {
     }
     if (!this.p.heaterIds.includes(e.equipmentId)) return;
     if (e.alias === "state") {
-      if (this.sockets.observe(e.equipmentId, parseOn(e.value)) && !this.hold) {
+      const manual = this.sockets.observe(e.equipmentId, parseOn(e.value), parseOn(e.previous));
+      if (manual && !this.hold) {
         this.startHold(e.equipmentId);
       }
       this.evaluate();
@@ -272,7 +282,11 @@ class Instance implements RecipeInstanceHandle {
   private evaluate(): void {
     const now = Date.now();
     const { timeoutMs } = this.p;
-    if (this.motion) this.lastMotionAt = now;
+    if (this.motion) {
+      this.lastMotionAt = now;
+      // Also written while motion lasts, so a crash (no stop()) loses little.
+      if (now - this.persistedMotionAt >= MOTION_PERSIST_MS) this.persistLastMotion(now);
+    }
 
     if (this.hold && holdEnded(this.motion, this.holdSince, this.lastMotionAt, now, timeoutMs)) {
       this.endHold(`Pièce vide depuis ${minutes(timeoutMs)} : la recette reprend la main`);
@@ -291,26 +305,25 @@ class Instance implements RecipeInstanceHandle {
       setpoints: this.p.setpoints,
     });
 
-    this.trackSensor(
-      sensor.temperature === null || sensor.at === null || now - sensor.at >= SILENT_MS,
-    );
+    const silent =
+      sensor.temperature === null || sensor.at === null || now - sensor.at >= SILENT_MS;
+    // FR7 — a hold cuts nothing on a silent sensor: no alert raised then, only cleared.
+    if (d.status !== "manual" || !silent) this.trackSensor(silent);
     this.logDecision(d, occupied, sensor.temperature);
 
     // The summary follows the readings; a switch shows once the socket reports it.
     const sockets = this.p.heaterIds.map((id) => readSocket(em, id));
     if (d.want !== "leave") {
-      const sent = this.sockets.apply(d.want, d.immediate, sockets, now);
-      if (sent.length > 0) {
-        const t = sensor.temperature === null ? "" : ` à ${degrees(sensor.temperature)}`;
-        const sp = d.setpoint === null ? "" : ` (consigne ${degrees(d.setpoint)})`;
-        this.ctx.log(`${d.want === "on" ? "Chauffage allumé" : "Chauffage coupé"}${t}${sp}`);
-      }
+      const t = sensor.temperature === null ? "" : ` à ${degrees(sensor.temperature)}`;
+      const sp = d.setpoint === null ? "" : ` (consigne ${degrees(d.setpoint)})`;
+      this.sockets.apply(d.want, d.immediate, sockets, now, `${t}${sp}`);
     }
 
     this.setState("summary", summaryOf(d, sensor.temperature, heatOf(sockets)));
+    // Counts down only where presence sets the setpoint: auto, outside the night window.
     const until = emptyAt(this.lastMotionAt, timeoutMs);
     const counting =
-      this.mode === "auto" && !this.hold && !this.motion && occupied && until !== null;
+      this.mode === "auto" && d.status === "comfort" && !this.motion && occupied && until !== null;
     this.setState("timerExpiresAt", counting ? new Date(until).toISOString() : null);
   }
 

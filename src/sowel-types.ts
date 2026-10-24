@@ -36,7 +36,7 @@ export interface RecipeActionDef {
   options: { value: string; label: string }[];
 }
 
-export interface RecipeTile {
+export interface RecipeTileDef {
   icon: string;
   summaryKey?: string;
   countdownKey?: string;
@@ -54,7 +54,7 @@ export interface RecipeDefinition {
   description: string;
   slots: RecipeSlotDef[];
   actions?: RecipeActionDef[];
-  tile?: RecipeTile;
+  tile?: RecipeTileDef;
   i18n?: Record<string, RecipeLangPack>;
   validate(params: Record<string, unknown>, ctx: RecipeContext): void;
   createInstance(params: Record<string, unknown>, ctx: RecipeContext): RecipeInstanceHandle;
@@ -69,7 +69,7 @@ export interface Equipment {
 export interface DataBindingValue {
   alias: string;
   value: unknown;
-  /** ISO instant of the last report, changed or not; null when never reported. */
+  /** Last report, changed or not, as the core spells it (`YYYY-MM-DD HH:MM:SSZ`); null when never reported. */
   lastUpdated?: string | null;
 }
 

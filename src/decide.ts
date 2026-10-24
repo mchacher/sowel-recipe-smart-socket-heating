@@ -81,8 +81,9 @@ export function decide(snap: Snapshot): Decision {
   const t = snap.temperature;
   if (t !== null && t >= MAX_TEMP)
     return { status: "safety", setpoint: null, want: "off", immediate: true };
-  if (snap.mode === "off") return { status: "off", setpoint: null, want: "off", immediate: true };
+  // A person's switch wins over the off mode too (FR9); picking a mode ends the hold (FR10).
   if (snap.hold) return { status: "manual", setpoint: null, want: "leave", immediate: false };
+  if (snap.mode === "off") return { status: "off", setpoint: null, want: "off", immediate: true };
   if (
     t === null ||
     snap.temperatureAt === null ||
