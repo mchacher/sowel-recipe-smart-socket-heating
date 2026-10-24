@@ -2,6 +2,14 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.3.0
+
+Everything from the room (spec 003).
+
+- **No temperature sensor to pick.** The temperature is the average of the room's sensors (its sub-zones included, sockets left out). A sensor quiet for 90 minutes drops out; with none left, the heating is cut as before. The 25 °C cut looks at the hottest reading.
+- **The form proposes only the room's sockets and cocoon buttons**, all of them, without asking for a zone.
+- **Updates load all the new code.** The recipe ships as a single bundled file. With 0.2.0, an update from the UI kept the 0.1.0 parameters until Sowel restarted (core issue mchacher/sowel#1073).
+
 ## v0.2.0
 
 Cocoon, and a new name (spec 002).

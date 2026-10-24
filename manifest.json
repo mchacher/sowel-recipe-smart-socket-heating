@@ -2,7 +2,7 @@
   "id": "smart-socket-heating",
   "type": "recipe",
   "name": "Socket Heating",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Heats a room through a smart socket from a temperature sensor: comfort when someone is there, eco after an absence, an optional night setpoint, a cocoon boost from the tile or a button.",
   "icon": "Flame",
   "repo": "mchacher/sowel-recipe-smart-socket-heating",
