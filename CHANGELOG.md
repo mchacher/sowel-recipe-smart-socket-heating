@@ -2,6 +2,11 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.3.1
+
+- **Cocoon up to 26 °C** (spec 004). Comfort, eco and night stay at 24 °C at most.
+- **Safety cut at 28 °C** instead of 25 °C, still on the hottest reading of the room and still immediate.
+
 ## v0.3.0
 
 Everything from the room (spec 003).
