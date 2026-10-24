@@ -4,7 +4,7 @@
  * Smart sockets feeding radiators, switched on/off from the zone's temperature
  * (spec 003) around a setpoint that follows the zone's presence: comfort while someone
  * is there, eco after an absence, an optional night setpoint, a cocoon boost
- * from the tile or a button (spec 002). Cuts at 25 °C and on a silent sensor;
+ * from the tile or a button (spec 002). Cuts at 28 °C and on a silent sensor;
  * stands back when someone else switches a socket.
  */
 
@@ -49,6 +49,8 @@ const PRESS_END_RE = /(^|_)(release|stop)$/;
 
 const TEMP_MIN = 5;
 const TEMP_MAX = 24;
+/** Spec 004 — the cocoon may go above the other setpoints, up to MAX_TEMP − 2 °C. */
+const COCOON_MAX = 26;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface Params {
@@ -103,10 +105,10 @@ export function readParams(p: Record<string, unknown>): Params {
   };
 }
 
-function checkTemp(label: string, v: unknown): number {
+function checkTemp(label: string, v: unknown, max = TEMP_MAX): number {
   const n = numParam(v);
-  if (n === null || n < TEMP_MIN || n > TEMP_MAX)
-    throw new Error(`${label} must be a temperature between ${TEMP_MIN} and ${TEMP_MAX} °C`);
+  if (n === null || n < TEMP_MIN || n > max)
+    throw new Error(`${label} must be a temperature between ${TEMP_MIN} and ${max} °C`);
   return n;
 }
 
@@ -144,7 +146,7 @@ export function validateParams(p: Record<string, unknown>, ctx: RecipeContext): 
     checkTemp("Night", p.nightTemp);
   }
 
-  if (present(p.cocoonTemp)) checkTemp("Cocoon", p.cocoonTemp);
+  if (present(p.cocoonTemp)) checkTemp("Cocoon", p.cocoonTemp, COCOON_MAX);
   const buttonIds = idList(p.buttons);
   if (buttonIds.length > 0 && !present(p.cocoonTemp))
     throw new Error("Cocoon buttons need a cocoon temperature");

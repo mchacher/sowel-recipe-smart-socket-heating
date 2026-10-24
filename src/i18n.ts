@@ -78,7 +78,7 @@ export const SLOTS: RecipeSlotDef[] = [
     type: "number",
     required: false,
     group: "cocoon",
-    constraints: { min: 5, max: 24 },
+    constraints: { min: 5, max: 26 },
   },
   {
     id: "buttons",
@@ -111,14 +111,14 @@ export const ACTIONS: RecipeActionDef[] = [
 
 export const NAME = "Socket Heating";
 export const DESCRIPTION =
-  "Heats a room through smart sockets from the room's temperature: comfort when someone is there, eco after an absence, an optional night setpoint, a cocoon boost from the tile or a button. Cuts at 25 °C and when the sensor goes silent.";
+  "Heats a room through smart sockets from the room's temperature: comfort when someone is there, eco after an absence, an optional night setpoint, a cocoon boost from the tile or a button. Cuts at 28 °C and when the sensor goes silent.";
 
 export const I18N: Record<string, RecipeLangPack> = {
   en: { name: NAME, description: DESCRIPTION, groups: { night: "Night", cocoon: "Cocoon" } },
   fr: {
     name: "Chauffage sur prise",
     description:
-      "Chauffe une pièce par ses prises connectées à partir de sa température : confort quand quelqu'un est là, eco après une absence, une consigne de nuit en option, un cocoon depuis la tuile ou un bouton. Coupe à 25 °C et quand le capteur se tait.",
+      "Chauffe une pièce par ses prises connectées à partir de sa température : confort quand quelqu'un est là, eco après une absence, une consigne de nuit en option, un cocoon depuis la tuile ou un bouton. Coupe à 28 °C et quand le capteur se tait.",
     slots: {
       zone: {
         name: "Zone",

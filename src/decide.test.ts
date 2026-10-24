@@ -87,12 +87,12 @@ describe("decide — off, hold and safety (FR2, FR6, FR7, FR9)", () => {
     });
   });
 
-  it("cuts at 25 °C in every mode, a manual hold included", () => {
+  it("cuts at 28 °C in every mode, a manual hold included", () => {
     for (const s of [
-      snap({ temperature: 25 }),
-      snap({ temperature: 25.3, mode: "comfort" }),
-      snap({ temperature: 25, hold: true }),
-      snap({ temperature: 26, mode: "off" }),
+      snap({ temperature: 28 }),
+      snap({ temperature: 28.3, mode: "comfort" }),
+      snap({ temperature: 28, hold: true }),
+      snap({ temperature: 29, mode: "off" }),
     ]) {
       expect(decide(s)).toMatchObject({ status: "safety", want: "off", immediate: true });
     }
@@ -134,9 +134,20 @@ describe("inWindow", () => {
 });
 
 describe("decide — the hottest reading (spec 003)", () => {
-  it("cuts when one reading of the room reaches 25 °C, whatever the average", () => {
-    expect(decide(snap({ temperature: 24, hottest: 26 }))).toMatchObject({ status: "safety" });
-    expect(decide(snap({ temperature: 19.5, hottest: 24.9 })).status).toBe("comfort");
+  it("cuts when one reading of the room reaches 28 °C, whatever the average", () => {
+    expect(decide(snap({ temperature: 24, hottest: 28 }))).toMatchObject({ status: "safety" });
+    expect(decide(snap({ temperature: 19.5, hottest: 27.9 })).status).toBe("comfort");
+  });
+});
+
+describe("decide — a 26 °C cocoon (spec 004)", () => {
+  it("heats up to 26 °C without the safety cut", () => {
+    const sp = { comfortTemp: 20, ecoTemp: 17, night: null, cocoonTemp: 26 };
+    expect(decide(snap({ mode: "cocoon", temperature: 25.5, setpoints: sp }))).toMatchObject({
+      status: "cocoon",
+      want: "on",
+    });
+    expect(decide(snap({ mode: "cocoon", temperature: 26.2, setpoints: sp })).want).toBe("off");
   });
 });
 
@@ -167,6 +178,6 @@ describe("decide — cocoon (spec 002 FR2)", () => {
 
   it("still yields to a manual hold and to safety", () => {
     expect(decide(snap({ mode: "cocoon", hold: true, setpoints: sp })).status).toBe("manual");
-    expect(decide(snap({ mode: "cocoon", temperature: 25, setpoints: sp })).status).toBe("safety");
+    expect(decide(snap({ mode: "cocoon", temperature: 28, setpoints: sp })).status).toBe("safety");
   });
 });

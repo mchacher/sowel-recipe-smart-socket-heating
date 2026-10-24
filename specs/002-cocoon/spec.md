@@ -25,12 +25,12 @@ The owner also asked to rename the recipe "Chauffage sur prise". Only the displa
 
 ## Parameters (new slots, group "cocoon")
 
-| Slot         | Type                     | Required | Meaning                                                               |
-| ------------ | ------------------------ | -------- | --------------------------------------------------------------------- |
-| `cocoonTemp` | number °C, 5–24          | no       | The cocoon setpoint. Without it, cocoon is not offered.               |
-| `buttons`    | equipment `button`, list | no       | Buttons whose press toggles cocoon (the recipe's zone since spec 003) |
+| Slot         | Type                                  | Required | Meaning                                                               |
+| ------------ | ------------------------------------- | -------- | --------------------------------------------------------------------- |
+| `cocoonTemp` | number °C, 5–24 (5–26 since spec 004) | no       | The cocoon setpoint. Without it, cocoon is not offered.               |
+| `buttons`    | equipment `button`, list              | no       | Buttons whose press toggles cocoon (the recipe's zone since spec 003) |
 
-Validation: `buttons` without `cocoonTemp` is refused; each button exists and has an `action` data binding; `cocoonTemp` in 5–24.
+Validation: `buttons` without `cocoonTemp` is refused; each button exists and has an `action` data binding; `cocoonTemp` in 5–24 (5–26 since spec 004).
 
 ## Functional requirements
 
@@ -56,6 +56,6 @@ Validation: `buttons` without `cocoonTemp` is refused; each button exists and ha
 ## Edge cases
 
 - Started from an empty room (tile tapped from elsewhere): lasts `timeout`, then auto.
-- Safety (≥ 25 °C) during cocoon: cut, cocoon stays; regulation resumes below.
+- Safety (≥ 25 °C, 28 °C since spec 004) during cocoon: cut, cocoon stays; regulation resumes below.
 - Button press while mode `off`: starts cocoon (an explicit request).
 - `cocoonTemp` removed from an instance in cocoon: the next evaluation reads auto.

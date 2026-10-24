@@ -168,15 +168,15 @@ describe("instance", () => {
     expect(world.state.get("summary")).toBe("Confort 20° · 19° · chauffe");
   });
 
-  it("cuts at once at 25 °C", async () => {
+  it("cuts at once at 28 °C", async () => {
     const world = office(19);
     world.zone.motion = true;
     await start(world);
     await vi.advanceTimersByTimeAsync(MIN);
-    world.temp(25.1);
+    world.temp(28.1);
     await flush();
     expect(world.stateOf()).toBe(false);
-    expect(world.state.get("summary")).toBe("Sécurité · 25,1°");
+    expect(world.state.get("summary")).toBe("Sécurité · 28,1°");
   });
 
   describe("manual hold (FR8–FR10)", () => {
@@ -658,7 +658,11 @@ describe("cocoon (spec 002)", () => {
       createRecipe().validate({ ...PARAMS, ...p }, world.ctx());
     expect(validate({ buttons: ["button"] })).toThrow(/need a cocoon temperature/);
     expect(validate({ cocoonTemp: "23", buttons: ["lamp"] })).toThrow(/no "action" data/);
-    expect(validate({ cocoonTemp: "30" })).toThrow(/Cocoon must be/);
+    expect(validate({ cocoonTemp: "26.5" })).toThrow(
+      /Cocoon must be a temperature between 5 and 26/,
+    );
+    expect(validate({ cocoonTemp: "26" })).not.toThrow();
+    expect(validate({ comfortTemp: "25" })).toThrow(/Comfort must be/);
     expect(validate({ cocoonTemp: "23" })).not.toThrow();
     expect(validate({ cocoonTemp: "", buttons: [] })).not.toThrow();
   });

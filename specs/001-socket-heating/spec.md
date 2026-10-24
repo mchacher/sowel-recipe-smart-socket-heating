@@ -47,7 +47,7 @@ Two facts measured on the installation shape the recipe:
 | `nightEnd`          | time                         | no       | —       | End of the night window (HH:MM); the window may cross midnight                                         |
 | `nightTemp`         | number °C, 5–24              | no       | —       | Setpoint during the night window, whatever the presence                                                |
 
-Fixed in the code: hysteresis ±0.2 °C, minimum cycle 5 min, maximum temperature 25 °C, sensor silent after 90 min.
+Fixed in the code: hysteresis ±0.2 °C, minimum cycle 5 min, maximum temperature 25 °C (28 °C since spec 004), sensor silent after 90 min.
 
 Validation (the instance is refused with a clear message):
 
@@ -71,7 +71,7 @@ Validation (the instance is refused with a clear message):
 
 ### Safety
 
-- **FR6 — Too hot.** Temperature ≥ 25 °C → every socket off at once, in every mode, a manual hold included (the hold is kept). The tile says so.
+- **FR6 — Too hot.** Temperature ≥ 25 °C (28 °C since spec 004) → every socket off at once, in every mode, a manual hold included (the hold is kept). The tile says so.
 - **FR7 — Silent sensor.** No temperature value, or none received for 90 minutes (the binding's `lastUpdated`) → sockets off at once, `alert` set in the state, one warning in the log. Cleared by the next reading. Not applied during a manual hold: the recipe does not regulate then, so it raises no alert either (it still clears one).
 
 ### Manual hold

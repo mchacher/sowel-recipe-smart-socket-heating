@@ -26,7 +26,7 @@ Separately, updating to 0.2.0 from the UI left prod running the 0.1.0 parameters
 
 - **FR1 — Slots.** `temperatureSensor` is removed; an instance still carrying it ignores it. `heaters` and `buttons` drop `crossZone`: the form lists the equipments of the recipe's zone, all of them, without asking for a zone.
 - **FR2 — Temperature.** The temperature is the average of the `temperature` readings of the equipments in the zone and its sub-zones (the core's zone aggregation scope), every socket (`switch`) excepted — a plug's own device temperature is not the room's —, counting only readings reported within the silent delay (90 min). A sensor gone quiet drops out of the average instead of holding it on its last value.
-- **FR2b — Safety on the hottest.** The 25 °C cut (spec 001 FR6) looks at the hottest live reading of the room, not at the average: a sensor next to the radiator at 26 °C cuts even when the room averages 24 °C.
+- **FR2b — Safety on the hottest.** The safety cut (spec 001 FR6, 28 °C since spec 004) looks at the hottest live reading of the room, not at the average: a sensor next to the radiator at 26 °C cuts even when the room averages 24 °C.
 - **FR3 — Silent.** No live reading left is spec 001's silent sensor: sockets off, alert `Température de la pièce muette`, one log line per edge.
 - **FR4 — Events.** A `temperature` report from any of those equipments re-evaluates; the set is re-read at each use, so an equipment moved in or out counts at once.
 - **FR5 — Validation.** The zone must hold at least one equipment with a `temperature` reading (sockets excepted).
