@@ -1,0 +1,18 @@
+{
+  "id": "smart-socket-heating",
+  "type": "recipe",
+  "name": "Smart Socket Heating",
+  "version": "0.1.0",
+  "description": "Heats a room through a smart socket from a temperature sensor: comfort when someone is there, eco after an absence, an optional night setpoint.",
+  "icon": "Flame",
+  "repo": "mchacher/sowel-recipe-smart-socket-heating",
+  "author": "mchacher",
+  "tags": ["heating", "presence", "thermostat", "socket", "automation"],
+  "i18n": {
+    "fr": {
+      "name": "Chauffage malin sur prise",
+      "description": "Chauffe une pièce par une prise connectée à partir d'un capteur de température : confort quand quelqu'un est là, eco après une absence, une consigne de nuit en option."
+    }
+  },
+  "sowelVersion": ">=1.74.0"
+}
