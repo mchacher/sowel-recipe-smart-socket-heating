@@ -2,6 +2,10 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.2.1
+
+- The recipe ships as a single bundled file, so updating it from the Sowel UI loads all the new code. With 0.2.0, an update without a restart kept the 0.1.0 parameters, which is why the cocoon settings did not show (core issue mchacher/sowel#1073).
+
 ## v0.2.0
 
 Cocoon, and a new name (spec 002).
