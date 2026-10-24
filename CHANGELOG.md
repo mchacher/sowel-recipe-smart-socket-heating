@@ -2,6 +2,13 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.4.0
+
+Confirmed presence (spec 005).
+
+- **A lone detection no longer heats an empty room.** Motion counts once it lasts 2 minutes or repeats within 5 minutes; an isolated detection is ignored and logged ("Mouvement isolé ignoré"). In an occupied room motion counts at once, as before.
+- **The heating is cut as soon as the room is empty**, without waiting for the 5 minute minimum between two switches.
+
 ## v0.3.1
 
 - **Cocoon up to 26 °C** (spec 004). Comfort, eco and night stay at 24 °C at most.
