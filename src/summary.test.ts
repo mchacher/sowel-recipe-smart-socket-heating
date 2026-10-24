@@ -36,6 +36,11 @@ describe("summaryOf (FR11)", () => {
     expect(summaryOf(night, 16, "off")).toBe("Nuit 15,5° · 16°");
   });
 
+  it("shows the cocoon label", () => {
+    const cocoon: Decision = { status: "cocoon", setpoint: 23, want: "on", immediate: false };
+    expect(summaryOf(cocoon, 21.4, "heating")).toBe("Cocoon 23° · 21,4° · chauffe");
+  });
+
   it("covers manual, off, safety and silent", () => {
     const d = (status: Decision["status"]): Decision => ({
       status,

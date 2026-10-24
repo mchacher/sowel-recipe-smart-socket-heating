@@ -3,11 +3,20 @@
  *
  * Smart sockets feeding radiators, switched on/off from a temperature sensor
  * around a setpoint that follows the zone's presence: comfort while someone
- * is there, eco after an absence, an optional night setpoint. Cuts at 25 °C
- * and on a silent sensor; stands back when someone else switches a socket.
+ * is there, eco after an absence, an optional night setpoint, a cocoon boost
+ * from the tile or a button (spec 002). Cuts at 25 °C and on a silent sensor;
+ * stands back when someone else switches a socket.
  */
 
-import { decide, isMode, SILENT_MS, type Decision, type Mode, type Setpoints } from "./decide.js";
+import {
+  decide,
+  inWindow,
+  isMode,
+  SILENT_MS,
+  type Decision,
+  type Mode,
+  type Setpoints,
+} from "./decide.js";
 import { ACTIONS, DESCRIPTION, I18N, NAME, SLOTS } from "./i18n.js";
 import { heatOf, parseInstant, parseOn, readSensor, readSocket } from "./inputs.js";
 import { emptyAt, holdEnded, isOccupied } from "./presence.js";
@@ -26,6 +35,10 @@ export const TICK_MS = 60_000;
 export const ALERT_SILENT = "Capteur de température muet";
 /** While motion lasts, its time is persisted at most this often. */
 export const MOTION_PERSIST_MS = 5 * 60_000;
+/** Spec 002 FR3 — a button report this soon after a press is the same press. */
+export const PRESS_DEBOUNCE_MS = 2_000;
+/** The second half of a press ("release", Zigbee2MQTT "*_release" / "*_stop"): not a press. */
+const PRESS_END_RE = /(^|_)(release|stop)$/;
 
 const TEMP_MIN = 5;
 const TEMP_MAX = 24;
@@ -35,6 +48,7 @@ export interface Params {
   zoneId: string;
   sensorId: string;
   heaterIds: string[];
+  buttonIds: string[];
   timeoutMs: number;
   setpoints: Setpoints;
 }
@@ -73,11 +87,13 @@ export function readParams(p: Record<string, unknown>): Params {
     zoneId: String(p.zone ?? ""),
     sensorId: String(p.temperatureSensor ?? ""),
     heaterIds: idList(p.heaters),
+    buttonIds: idList(p.buttons),
     timeoutMs: parseDuration(p.timeout) ?? 30 * 60_000,
     setpoints: {
       comfortTemp: numParam(p.comfortTemp) ?? 20,
       ecoTemp: numParam(p.ecoTemp) ?? 17,
       night,
+      cocoonTemp: numParam(p.cocoonTemp),
     },
   };
 }
@@ -124,6 +140,17 @@ export function validateParams(p: Record<string, unknown>, ctx: RecipeContext): 
     if (p.nightStart === p.nightEnd) throw new Error("Night start and end must differ");
     checkTemp("Night", p.nightTemp);
   }
+
+  if (present(p.cocoonTemp)) checkTemp("Cocoon", p.cocoonTemp);
+  const buttonIds = idList(p.buttons);
+  if (buttonIds.length > 0 && !present(p.cocoonTemp))
+    throw new Error("Cocoon buttons need a cocoon temperature");
+  for (const id of buttonIds) {
+    const eq = em.getById(id);
+    if (!eq) throw new Error(`Button ${id} not found`);
+    if (!em.getDataBindingsWithValues(id).some((b) => b.alias === "action"))
+      throw new Error(`"${eq.name}" has no "action" data`);
+  }
 }
 
 function minutes(ms: number): string {
@@ -134,17 +161,27 @@ function minutes(ms: number): string {
 
 const MODE_LABELS: Record<Mode, string> = {
   auto: "auto",
+  cocoon: "cocoon",
   comfort: "confort",
   eco: "eco",
   off: "arrêt",
 };
 
-const SETPOINT_LABELS = { comfort: "confort", eco: "eco", night: "nuit" } as const;
+const SETPOINT_LABELS = {
+  cocoon: "cocoon",
+  comfort: "confort",
+  eco: "eco",
+  night: "nuit",
+} as const;
 
 class Instance implements RecipeInstanceHandle {
   private mode: Mode;
   private hold: boolean;
   private holdSince: number;
+  private cocoonSince: number;
+  /** Spec 002 FR5 — the night window's state at the previous evaluation. */
+  private wasNight: boolean;
+  private readonly lastPressAt = new Map<string, number>();
   private motion: boolean;
   private lastMotionAt: number | null;
   private silent = false;
@@ -161,12 +198,22 @@ class Instance implements RecipeInstanceHandle {
     private readonly ctx: RecipeContext,
   ) {
     const em = ctx.equipmentManager;
-    for (const id of [p.sensorId, ...p.heaterIds]) this.names.set(id, em.getById(id)?.name ?? id);
+    for (const id of [p.sensorId, ...p.heaterIds, ...p.buttonIds])
+      this.names.set(id, em.getById(id)?.name ?? id);
 
     const saved = ctx.state.get("mode");
-    this.mode = isMode(saved) ? saved : "auto";
+    this.mode = isMode(saved) && this.offers(saved) ? saved : "auto";
+    if (saved === "cocoon" && this.mode !== "cocoon")
+      ctx.log("Plus de température cocoon : retour en mode auto");
     // The control renders only while its state key holds a value.
     ctx.state.set("mode", this.mode);
+    this.cocoonSince = parseInstant(ctx.state.get("cocoonSince")) ?? Date.now();
+    if (this.mode === "cocoon")
+      ctx.state.set("cocoonSince", new Date(this.cocoonSince).toISOString());
+    else ctx.state.delete("cocoonSince");
+    // Against the cocoon's start, so a night that began while the core was down still ends it;
+    // a cocoon started inside the night window lasts until the absence.
+    this.wasNight = this.isNight(this.mode === "cocoon" ? this.cocoonSince : Date.now());
 
     this.hold = ctx.state.get("hold") === true;
     this.holdSince = parseInstant(ctx.state.get("holdSince")) ?? Date.now();
@@ -209,14 +256,64 @@ class Instance implements RecipeInstanceHandle {
     this.guard(() => {
       if (action !== "set_mode") return;
       const mode = payload?.mode;
-      if (!isMode(mode)) return;
-      this.mode = mode;
-      this.ctx.state.set("mode", mode);
-      if (this.hold) this.endHold();
-      this.ctx.log(`Mode ${MODE_LABELS[mode]} choisi`);
+      if (!isMode(mode) || !this.offers(mode)) return;
+      this.setMode(mode);
+      this.ctx.log(
+        mode === "cocoon" ? "Cocoon activé (tuile)" : `Mode ${MODE_LABELS[mode]} choisi`,
+      );
       this.lastDecisionKey = "";
       this.evaluate();
     });
+  }
+
+  /** Cocoon is offered only with a cocoon temperature (spec 002 FR1). */
+  private offers(mode: Mode): boolean {
+    return mode !== "cocoon" || this.p.setpoints.cocoonTemp !== null;
+  }
+
+  /**
+   * Picking a mode, from the tile or a button, ends a manual hold (FR10); a cocoon
+   * ending on its own (absence, night) does not.
+   */
+  private setMode(mode: Mode, picked = true): void {
+    this.mode = mode;
+    this.ctx.state.set("mode", mode);
+    if (mode === "cocoon") {
+      this.cocoonSince = Date.now();
+      this.ctx.state.set("cocoonSince", new Date(this.cocoonSince).toISOString());
+    } else {
+      this.ctx.state.delete("cocoonSince");
+    }
+    if (picked && this.hold) this.endHold();
+  }
+
+  private isNight(now: number): boolean {
+    const night = this.p.setpoints.night;
+    return night !== null && inWindow(new Date(now), night.start, night.end);
+  }
+
+  /** Spec 002 FR3 — any press toggles cocoon; a report right after a press is the same press. */
+  private onPress(id: string, value: unknown): void {
+    if (value === null || value === undefined || value === "") return;
+    if (PRESS_END_RE.test(String(value))) return;
+    if (!this.offers("cocoon")) return;
+    const now = Date.now();
+    if (now - (this.lastPressAt.get(id) ?? 0) < PRESS_DEBOUNCE_MS) return;
+    this.lastPressAt.set(id, now);
+    const source = `bouton ${this.names.get(id) ?? id}`;
+    if (this.mode === "cocoon") {
+      this.endCocoon(source, true);
+    } else {
+      this.setMode("cocoon");
+      this.ctx.log(`Cocoon activé (${source})`);
+    }
+    this.lastDecisionKey = "";
+    this.evaluate();
+  }
+
+  private endCocoon(reason: string, picked = false): void {
+    this.setMode("auto", picked);
+    this.ctx.log(`Fin du cocoon : ${reason}`);
   }
 
   /** Handlers and timers never throw (CLAUDE.md). */
@@ -246,6 +343,10 @@ class Instance implements RecipeInstanceHandle {
   }
 
   private onData(e: DataChangedEvent): void {
+    if (e.alias === "action" && this.p.buttonIds.includes(e.equipmentId)) {
+      this.onPress(e.equipmentId, e.value);
+      return;
+    }
     if (e.equipmentId === this.p.sensorId && e.alias === "temperature") {
       this.evaluate();
       return;
@@ -292,6 +393,16 @@ class Instance implements RecipeInstanceHandle {
       this.endHold(`Pièce vide depuis ${minutes(timeoutMs)} : la recette reprend la main`);
     }
 
+    // Spec 002 FR4, FR5 — cocoon ends on absence and when the night window starts.
+    const night = this.isNight(now);
+    const nightStarts = night && !this.wasNight;
+    this.wasNight = night;
+    if (this.mode === "cocoon") {
+      if (holdEnded(this.motion, this.cocoonSince, this.lastMotionAt, now, timeoutMs))
+        this.endCocoon(`pièce vide depuis ${minutes(timeoutMs)}`);
+      else if (nightStarts) this.endCocoon("début de la nuit");
+    }
+
     const em = this.ctx.equipmentManager;
     const sensor = readSensor(em, this.p.sensorId);
     const occupied = isOccupied(this.motion, this.lastMotionAt, now, timeoutMs);
@@ -320,11 +431,15 @@ class Instance implements RecipeInstanceHandle {
     }
 
     this.setState("summary", summaryOf(d, sensor.temperature, heatOf(sockets)));
-    // Counts down only where presence sets the setpoint: auto, outside the night window.
-    const until = emptyAt(this.lastMotionAt, timeoutMs);
-    const counting =
-      this.mode === "auto" && d.status === "comfort" && !this.motion && occupied && until !== null;
-    this.setState("timerExpiresAt", counting ? new Date(until).toISOString() : null);
+    // Counts down only where presence sets the setpoint: auto outside the night window, cocoon.
+    let until: number | null = null;
+    if (!this.motion) {
+      if (this.mode === "cocoon" && d.status === "cocoon")
+        until = Math.max(this.cocoonSince, this.lastMotionAt ?? 0) + timeoutMs;
+      else if (this.mode === "auto" && d.status === "comfort" && occupied)
+        until = emptyAt(this.lastMotionAt, timeoutMs);
+    }
+    this.setState("timerExpiresAt", until === null ? null : new Date(until).toISOString());
   }
 
   /** FR7 — `alert` follows the sensor, one log line per edge. */
@@ -364,13 +479,15 @@ class Instance implements RecipeInstanceHandle {
         return;
       default: {
         const why =
-          this.mode !== "auto"
-            ? "mode forcé"
-            : d.status === "night"
-              ? "plage de nuit"
-              : occupied
-                ? "présence"
-                : "absence";
+          this.mode === "cocoon"
+            ? "cocoon"
+            : this.mode !== "auto"
+              ? "mode forcé"
+              : d.status === "night"
+                ? "plage de nuit"
+                : occupied
+                  ? "présence"
+                  : "absence";
         this.ctx.log(`Consigne ${SETPOINT_LABELS[d.status]} ${degrees(d.setpoint ?? 0)} (${why})`);
       }
     }

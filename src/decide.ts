@@ -12,14 +12,15 @@ export const SILENT_MS = 90 * 60_000;
 /** FR5 — a regulation switch of a socket waits this long after the previous one. */
 export const MIN_CYCLE_MS = 5 * 60_000;
 
-export const MODES = ["auto", "comfort", "eco", "off"] as const;
+export const MODES = ["auto", "cocoon", "comfort", "eco", "off"] as const;
 export type Mode = (typeof MODES)[number];
 
 export function isMode(v: unknown): v is Mode {
   return typeof v === "string" && (MODES as readonly string[]).includes(v);
 }
 
-export type Status = "safety" | "off" | "manual" | "silent" | "comfort" | "eco" | "night";
+export type Status =
+  "safety" | "off" | "manual" | "silent" | "cocoon" | "comfort" | "eco" | "night";
 
 export interface NightWindow {
   start: string;
@@ -31,6 +32,8 @@ export interface Setpoints {
   comfortTemp: number;
   ecoTemp: number;
   night: NightWindow | null;
+  /** Spec 002 — null when the instance offers no cocoon. */
+  cocoonTemp: number | null;
 }
 
 export interface Snapshot {
@@ -65,9 +68,14 @@ export function inWindow(now: Date, start: string, end: string): boolean {
   return s < e ? m >= s && m < e : m >= s || m < e;
 }
 
-/** FR3 — the setpoint for a regulating mode. */
-export function setpointOf(snap: Snapshot): { status: "comfort" | "eco" | "night"; temp: number } {
+/** FR3 — the setpoint for a regulating mode; cocoon wins over the night window (spec 002 FR2). */
+export function setpointOf(snap: Snapshot): {
+  status: "cocoon" | "comfort" | "eco" | "night";
+  temp: number;
+} {
   const { setpoints: sp } = snap;
+  if (snap.mode === "cocoon" && sp.cocoonTemp !== null)
+    return { status: "cocoon", temp: sp.cocoonTemp };
   if (snap.mode === "comfort") return { status: "comfort", temp: sp.comfortTemp };
   if (snap.mode === "eco") return { status: "eco", temp: sp.ecoTemp };
   if (sp.night && inWindow(snap.now, sp.night.start, sp.night.end))

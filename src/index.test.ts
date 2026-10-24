@@ -31,9 +31,16 @@ describe("createRecipe", () => {
     const r = createRecipe();
     expect(r.id).toBe(RECIPE_ID);
     expect(r.actions?.[0]).toMatchObject({ id: "set_mode", stateKey: "mode" });
-    expect(r.actions?.[0].options.map((o) => o.value)).toEqual(["auto", "comfort", "eco", "off"]);
+    expect(r.actions?.[0].options.map((o) => o.value)).toEqual([
+      "auto",
+      "cocoon",
+      "comfort",
+      "eco",
+      "off",
+    ]);
     expect(r.tile).toEqual({ icon: "Flame", actions: ["set_mode"] });
-    expect(r.i18n?.fr.name).toBe("Chauffage malin sur prise");
+    expect(r.i18n?.fr.name).toBe("Chauffage sur prise");
+    expect(r.name).toBe("Socket Heating");
   });
 });
 
@@ -393,5 +400,261 @@ describe("instance", () => {
     world.temp(15);
     await vi.advanceTimersByTimeAsync(10 * TICK_MS);
     expect(world.orders).toEqual([]);
+  });
+});
+
+describe("cocoon (spec 002)", () => {
+  const COCOON = { ...PARAMS, cocoonTemp: "23", buttons: ["button"] };
+
+  function withButton(temp = 22): FakeWorld {
+    return office(temp).add({
+      id: "button",
+      name: "Switch Cocoon",
+      type: "button",
+      data: { action: "single", battery: 100 },
+      orders: [],
+    });
+  }
+
+  const press = (world: FakeWorld, action: unknown = "single") =>
+    world.set("button", "action", action);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 24, 12, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("starts from the tile and regulates around the cocoon setpoint (AC1)", async () => {
+    const world = withButton(22.5);
+    world.zone.motion = true;
+    const handle = await start(world, COCOON);
+    expect(world.orders).toEqual([]);
+    handle.onAction?.("set_mode", { mode: "cocoon" });
+    await flush();
+    expect(world.state.get("mode")).toBe("cocoon");
+    expect(world.state.get("cocoonSince")).toBe(new Date().toISOString());
+    expect(world.stateOf()).toBe(true);
+    expect(world.state.get("summary")).toMatch(/^Cocoon 23° · 22,5°/);
+    expect(world.logs.map((l) => l.message)).toContain("Cocoon activé (tuile)");
+  });
+
+  it("ignores a cocoon request without a cocoon temperature (AC4)", async () => {
+    const world = withButton();
+    world.zone.motion = true;
+    const handle = await start(world);
+    handle.onAction?.("set_mode", { mode: "cocoon" });
+    expect(world.state.get("mode")).toBe("auto");
+  });
+
+  it("toggles on a button press, then back to auto on the next (AC2)", async () => {
+    const world = withButton();
+    world.zone.motion = true;
+    await start(world, COCOON);
+    press(world);
+    expect(world.state.get("mode")).toBe("cocoon");
+    expect(world.logs.map((l) => l.message)).toContain("Cocoon activé (bouton Switch Cocoon)");
+    await vi.advanceTimersByTimeAsync(10_000);
+    press(world);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.state.get("cocoonSince")).toBeUndefined();
+    expect(world.logs.map((l) => l.message)).toContain("Fin du cocoon : bouton Switch Cocoon");
+  });
+
+  it("toggles once on a hold / release pair, and ignores an empty report", async () => {
+    const world = withButton();
+    world.zone.motion = true;
+    await start(world, COCOON);
+    press(world, "");
+    expect(world.state.get("mode")).toBe("auto");
+    press(world, "hold");
+    await vi.advanceTimersByTimeAsync(1_500);
+    press(world, "release");
+    expect(world.state.get("mode")).toBe("cocoon");
+  });
+
+  it("ignores a button without a cocoon temperature (AC4)", async () => {
+    const world = withButton();
+    world.zone.motion = true;
+    await start(world);
+    press(world);
+    expect(world.state.get("mode")).toBe("auto");
+  });
+
+  it("a press ends a manual hold", async () => {
+    const world = withButton(22);
+    world.zone.motion = true;
+    await start(world, COCOON);
+    world.set("socket", "state", true);
+    expect(world.state.get("hold")).toBe(true);
+    press(world);
+    expect(world.state.get("hold")).toBeUndefined();
+    expect(world.state.get("summary")).toMatch(/^Cocoon 23°/);
+  });
+
+  it("ends on absence after the timeout, back to auto (AC3)", async () => {
+    const world = withButton(22);
+    world.zone.motion = true;
+    await start(world, COCOON);
+    press(world);
+    world.motion(false);
+    expect(world.state.get("timerExpiresAt")).toBe(new Date(Date.now() + 30 * MIN).toISOString());
+    await vi.advanceTimersByTimeAsync(29 * MIN);
+    expect(world.state.get("mode")).toBe("cocoon");
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.logs.map((l) => l.message)).toContain("Fin du cocoon : pièce vide depuis 30 min");
+    expect(world.state.get("summary")).toMatch(/^Eco 17°/);
+  });
+
+  it("started from an empty room, lasts the timeout", async () => {
+    const world = withButton(22);
+    const handle = await start(world, COCOON);
+    expect(world.state.get("summary")).toMatch(/^Eco 17°/);
+    handle.onAction?.("set_mode", { mode: "cocoon" });
+    expect(world.state.get("mode")).toBe("cocoon");
+    expect(world.state.get("timerExpiresAt")).toBe(new Date(Date.now() + 30 * MIN).toISOString());
+    await vi.advanceTimersByTimeAsync(31 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+  });
+
+  it("ends when the night window starts (AC3)", async () => {
+    vi.setSystemTime(new Date(2026, 9, 24, 21, 50));
+    const world = withButton(22);
+    world.zone.motion = true;
+    const night = { nightStart: "22:00", nightEnd: "06:00", nightTemp: "15" };
+    await start(world, { ...COCOON, ...night });
+    press(world);
+    await vi.advanceTimersByTimeAsync(9 * MIN);
+    expect(world.state.get("mode")).toBe("cocoon");
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.logs.map((l) => l.message)).toContain("Fin du cocoon : début de la nuit");
+    expect(world.state.get("summary")).toMatch(/^Nuit 15°/);
+  });
+
+  it("started inside the night window, wins over it until the absence", async () => {
+    vi.setSystemTime(new Date(2026, 9, 24, 23, 0));
+    const world = withButton(16);
+    world.zone.motion = true;
+    const night = { nightStart: "22:00", nightEnd: "06:00", nightTemp: "15" };
+    await start(world, { ...COCOON, ...night });
+    press(world);
+    await vi.advanceTimersByTimeAsync(10 * MIN);
+    expect(world.state.get("mode")).toBe("cocoon");
+    expect(world.state.get("summary")).toMatch(/^Cocoon 23°/);
+  });
+
+  it("survives a restart with its start (AC5)", async () => {
+    const world = withButton(22);
+    world.zone.motion = true;
+    const handle = await start(world, COCOON);
+    press(world);
+    const since = world.state.get("cocoonSince");
+    world.motion(false);
+    await vi.advanceTimersByTimeAsync(10 * MIN);
+    handle.stop();
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    world.temp(22);
+    await start(world, COCOON);
+    expect(world.state.get("mode")).toBe("cocoon");
+    expect(world.state.get("cocoonSince")).toBe(since);
+    await vi.advanceTimersByTimeAsync(16 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+  });
+
+  it("ignores the release of a long hold", async () => {
+    const world = withButton();
+    world.zone.motion = true;
+    await start(world, COCOON);
+    press(world, "hold");
+    await vi.advanceTimersByTimeAsync(5_000);
+    press(world, "release");
+    press(world, "brightness_stop");
+    expect(world.state.get("mode")).toBe("cocoon");
+  });
+
+  it("counts down from the last motion when it outlasts the start", async () => {
+    const world = withButton(22);
+    world.zone.motion = true;
+    await start(world, COCOON);
+    press(world);
+    await vi.advanceTimersByTimeAsync(10 * MIN);
+    world.motion(false);
+    expect(world.state.get("timerExpiresAt")).toBe(new Date(Date.now() + 30 * MIN).toISOString());
+  });
+
+  it("ending on its own keeps a manual hold: night start", async () => {
+    vi.setSystemTime(new Date(2026, 9, 24, 21, 50));
+    const world = withButton(24);
+    world.zone.motion = true;
+    const night = { nightStart: "22:00", nightEnd: "06:00", nightTemp: "15" };
+    await start(world, { ...COCOON, ...night });
+    press(world);
+    world.set("socket", "state", true);
+    expect(world.state.get("hold")).toBe(true);
+    const orders = world.orders.length;
+    await vi.advanceTimersByTimeAsync(11 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.state.get("hold")).toBe(true);
+    expect(world.orders).toHaveLength(orders);
+    expect(world.stateOf()).toBe(true);
+  });
+
+  it("ending on its own keeps a manual hold: absence", async () => {
+    const world = withButton(22);
+    const handle = await start(world, COCOON);
+    handle.onAction?.("set_mode", { mode: "cocoon" });
+    await vi.advanceTimersByTimeAsync(20 * MIN);
+    world.set("socket", "state", false);
+    expect(world.state.get("hold")).toBe(true);
+    await vi.advanceTimersByTimeAsync(11 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.state.get("hold")).toBe(true);
+    await vi.advanceTimersByTimeAsync(20 * MIN);
+    expect(world.state.get("hold")).toBeUndefined();
+  });
+
+  it("a restart across the night start ends the cocoon", async () => {
+    vi.setSystemTime(new Date(2026, 9, 24, 21, 50));
+    const world = withButton(22);
+    world.zone.motion = true;
+    const params = { ...COCOON, nightStart: "22:00", nightEnd: "06:00", nightTemp: "15" };
+    const handle = await start(world, params);
+    press(world);
+    await vi.advanceTimersByTimeAsync(9 * MIN);
+    handle.stop();
+    await vi.advanceTimersByTimeAsync(3 * MIN);
+    world.temp(22);
+    await start(world, params);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.logs.map((l) => l.message)).toContain("Fin du cocoon : début de la nuit");
+  });
+
+  it("restarts in auto when the cocoon temperature was removed", async () => {
+    const world = withButton(22);
+    world.zone.motion = true;
+    world.state.set("mode", "cocoon");
+    world.state.set("cocoonSince", new Date().toISOString());
+    await start(world);
+    expect(world.state.get("mode")).toBe("auto");
+    expect(world.state.get("cocoonSince")).toBeUndefined();
+  });
+
+  it("refuses buttons without a cocoon temperature, and a button without action", () => {
+    const world = withButton().add({
+      id: "lamp",
+      name: "Lampe",
+      type: "light",
+      data: { state: false },
+      orders: [],
+    });
+    const validate = (p: Record<string, unknown>) => () =>
+      createRecipe().validate({ ...PARAMS, ...p }, world.ctx());
+    expect(validate({ buttons: ["button"] })).toThrow(/need a cocoon temperature/);
+    expect(validate({ cocoonTemp: "23", buttons: ["lamp"] })).toThrow(/no "action" data/);
+    expect(validate({ cocoonTemp: "30" })).toThrow(/Cocoon must be/);
+    expect(validate({ cocoonTemp: "23" })).not.toThrow();
+    expect(validate({ cocoonTemp: "", buttons: [] })).not.toThrow();
   });
 });
