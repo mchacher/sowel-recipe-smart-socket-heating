@@ -4,6 +4,7 @@ Recipe id `smart-socket-heating`.
 
 Heats a room through a smart socket for [Sowel](https://docs.sowel.org): an electric radiator plugged into a socket (core `switch`). Everything comes from the room (the recipe's zone): the presence its motion sensors give, the temperature its sensors read, the sockets and buttons it holds.
 
+- **Confirmed presence**: in an empty room, motion counts once it lasts 2 minutes or repeats within 5 minutes; a lone detection is ignored.
 - **Comfort** while someone is in the room, **eco** after a time without motion, an optional **night** setpoint over a time window.
 - **Cocoon**: a warmer setpoint switched on by a tap on the tile or a press on a button, and off by the next press, an absence, the start of the night window or another mode.
 - **On/off regulation** from the room's temperature (the average of its sensors), ±0.2 °C around the setpoint, at least 5 minutes between two switches.

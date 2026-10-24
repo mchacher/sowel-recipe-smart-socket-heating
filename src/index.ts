@@ -26,7 +26,7 @@ import {
   readZoneTemperature,
   temperatureSources,
 } from "./inputs.js";
-import { emptyAt, holdEnded, isOccupied } from "./presence.js";
+import { emptyAt, holdEnded, isOccupied, PresenceFilter } from "./presence.js";
 import { SocketControl } from "./sockets.js";
 import { degrees, summaryOf } from "./summary.js";
 import type {
@@ -187,7 +187,12 @@ class Instance implements RecipeInstanceHandle {
   /** Spec 002 FR5 — the night window's state at the previous evaluation. */
   private wasNight: boolean;
   private readonly lastPressAt = new Map<string, number>();
+  /** Confirmed motion (spec 005); `rawMotion` is the zone's. */
   private motion: boolean;
+  private rawMotion: boolean;
+  private readonly presence = new PresenceFilter();
+  /** Spec 005 FR2 — the setpoint the sockets were last switched on for. */
+  private heatSetpoint: number | null = null;
   private lastMotionAt: number | null;
   private silent = false;
   private lastDecisionKey = "";
@@ -225,7 +230,9 @@ class Instance implements RecipeInstanceHandle {
     this.lastMotionAt = parseInstant(ctx.state.get("lastMotionAt"));
 
     const zone = ctx.zoneAggregator.getByZoneId(p.zoneId);
-    this.motion = zone?.motion ?? false;
+    this.rawMotion = zone?.motion ?? false;
+    // Motion already there at start counts as confirmed (spec 005 FR1).
+    this.motion = this.rawMotion;
     if (zone && zone.motionSensors === 0)
       ctx.log(
         "La zone n'a aucun détecteur de mouvement : la pièce est toujours considérée vide",
@@ -334,11 +341,20 @@ class Instance implements RecipeInstanceHandle {
   private onZone(e: ZoneChangedEvent): void {
     if (e.zoneId !== this.p.zoneId) return;
     const motion = e.aggregatedData?.motion ?? false;
+    if (motion === this.rawMotion) return;
+    this.rawMotion = motion;
+    this.evaluate();
+  }
+
+  /** Spec 005 FR1 — the zone's motion counts in an empty room only once confirmed. */
+  private filterMotion(now: number): void {
+    const occupied = isOccupied(this.motion, this.lastMotionAt, now, this.p.timeoutMs);
+    const { motion, dropped } = this.presence.update(this.rawMotion, occupied, now);
+    if (dropped) this.ctx.log("Mouvement isolé ignoré : présence non confirmée");
     if (motion === this.motion) return;
     // FR1 — the room stays occupied for `timeout` from the end of motion; a restart keeps it.
-    this.persistLastMotion(Date.now());
+    this.persistLastMotion(now);
     this.motion = motion;
-    this.evaluate();
   }
 
   private persistLastMotion(at: number): void {
@@ -402,6 +418,7 @@ class Instance implements RecipeInstanceHandle {
   private evaluate(): void {
     const now = Date.now();
     const { timeoutMs } = this.p;
+    this.filterMotion(now);
     if (this.motion) {
       this.lastMotionAt = now;
       // Also written while motion lasts, so a crash (no stop()) loses little.
@@ -446,7 +463,14 @@ class Instance implements RecipeInstanceHandle {
     if (d.want !== "leave") {
       const t = sensor.temperature === null ? "" : ` à ${degrees(sensor.temperature)}`;
       const sp = d.setpoint === null ? "" : ` (consigne ${degrees(d.setpoint)})`;
-      this.sockets.apply(d.want, d.immediate, sockets, now, `${t}${sp}`);
+      // Spec 005 FR2 — a cut because the setpoint dropped (absence, eco) does not wait for the cycle.
+      const lowered =
+        d.want === "off" &&
+        d.setpoint !== null &&
+        this.heatSetpoint !== null &&
+        d.setpoint < this.heatSetpoint;
+      if (d.want === "on") this.heatSetpoint = d.setpoint;
+      this.sockets.apply(d.want, d.immediate || lowered, sockets, now, `${t}${sp}`);
     }
 
     this.setState("summary", summaryOf(d, sensor.temperature, heatOf(sockets)));

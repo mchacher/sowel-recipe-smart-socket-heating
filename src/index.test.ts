@@ -716,3 +716,76 @@ describe("the room's temperature (spec 003)", () => {
     expect(world.state.get("alert")).toBeUndefined();
   });
 });
+
+describe("confirmed presence (spec 005)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 24, 14, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("ignores the 14:05 blip: one detection of 63 s in an empty room", async () => {
+    const world = office(22.7);
+    await start(world, { ...PARAMS, comfortTemp: "23" });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    world.motion(true);
+    await vi.advanceTimersByTimeAsync(63_000);
+    world.motion(false);
+    await vi.advanceTimersByTimeAsync(10 * MIN);
+    expect(world.orders).toEqual([]);
+    expect(world.state.get("summary")).toMatch(/^Eco 17°/);
+    expect(world.logs.map((l) => l.message)).toContain(
+      "Mouvement isolé ignoré : présence non confirmée",
+    );
+  });
+
+  it("heats once motion lasts 2 minutes", async () => {
+    const world = office(19);
+    await start(world);
+    world.motion(true);
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(world.orders).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    expect(world.state.get("summary")).toMatch(/^Confort 20°/);
+    expect(world.stateOf()).toBe(true);
+  });
+
+  it("heats on a second detection within 5 minutes", async () => {
+    const world = office(19);
+    await start(world);
+    world.motion(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    world.motion(false);
+    await vi.advanceTimersByTimeAsync(3 * MIN);
+    world.motion(true);
+    await flush();
+    expect(world.state.get("summary")).toMatch(/^Confort 20°/);
+  });
+
+  it("an unconfirmed detection does not extend a cocoon", async () => {
+    const world = office(22);
+    const handle = await start(world, { ...PARAMS, cocoonTemp: "24" });
+    handle.onAction?.("set_mode", { mode: "cocoon" });
+    await vi.advanceTimersByTimeAsync(20 * MIN);
+    world.motion(true);
+    await vi.advanceTimersByTimeAsync(40_000);
+    world.motion(false);
+    await vi.advanceTimersByTimeAsync(11 * MIN);
+    expect(world.state.get("mode")).toBe("auto");
+  });
+
+  it("cuts at once when the room empties, without the 5 min cycle (FR2)", async () => {
+    const world = office(22.9);
+    world.zone.motion = true;
+    await start(world, { ...PARAMS, comfortTemp: "23" });
+    world.motion(false);
+    await vi.advanceTimersByTimeAsync(26 * MIN);
+    world.temp(22.8);
+    await flush();
+    expect(world.stateOf()).toBe(true);
+    await vi.advanceTimersByTimeAsync(4 * MIN);
+    // Empty at 30 min: eco, cut at once although switched on 4 minutes ago.
+    expect(world.state.get("summary")).toMatch(/^Eco 17°/);
+    expect(world.stateOf()).toBe(false);
+  });
+});
