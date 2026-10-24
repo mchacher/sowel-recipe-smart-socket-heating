@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyAt, holdEnded, isOccupied } from "./presence.js";
+import { PresenceFilter, emptyAt, holdEnded, isOccupied } from "./presence.js";
 
 const MIN = 60_000;
 const T = 30 * MIN;
@@ -37,5 +37,45 @@ describe("holdEnded (FR10)", () => {
 
   it("never ends while there is motion", () => {
     expect(holdEnded(true, NOW - 120 * MIN, NOW - 120 * MIN, NOW, T)).toBe(false);
+  });
+});
+
+describe("PresenceFilter (spec 005 FR1)", () => {
+  const S = 1_000;
+
+  it("drops a lone detection in an empty room", () => {
+    const f = new PresenceFilter();
+    expect(f.update(true, false, 0).motion).toBe(false);
+    expect(f.update(false, false, 63 * S).motion).toBe(false);
+    expect(f.update(false, false, 4 * MIN)).toEqual({ motion: false, dropped: false });
+    expect(f.update(false, false, 5 * MIN)).toEqual({ motion: false, dropped: true });
+  });
+
+  it("confirms motion lasting 2 minutes", () => {
+    const f = new PresenceFilter();
+    f.update(true, false, 0);
+    expect(f.update(true, false, MIN).motion).toBe(false);
+    expect(f.update(true, false, 2 * MIN).motion).toBe(true);
+  });
+
+  it("confirms a second detection within 5 minutes", () => {
+    const f = new PresenceFilter();
+    f.update(true, false, 0);
+    f.update(false, false, MIN);
+    expect(f.update(true, false, 4 * MIN).motion).toBe(true);
+  });
+
+  it("a second detection after 5 minutes starts over", () => {
+    const f = new PresenceFilter();
+    f.update(true, false, 0);
+    f.update(false, false, MIN);
+    expect(f.update(true, false, 6 * MIN)).toEqual({ motion: false, dropped: true });
+    expect(f.update(true, false, 8 * MIN).motion).toBe(true);
+  });
+
+  it("passes motion through in an occupied room", () => {
+    const f = new PresenceFilter();
+    expect(f.update(true, true, 0).motion).toBe(true);
+    expect(f.update(false, true, S).motion).toBe(false);
   });
 });
