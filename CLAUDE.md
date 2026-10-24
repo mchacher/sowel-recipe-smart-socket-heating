@@ -34,7 +34,7 @@ The core repo is expected as a sibling directory (`../sowel`).
 
 ## Tech
 
-Node 24, TypeScript strict, ESM. Vitest with fake timers. ESLint + Prettier as in the core. `console.*` is an error: log through `ctx.log` / `ctx.logger`.
+Node 24, TypeScript strict, ESM. `npm run build` type-checks with `tsc` and bundles `src/index.ts` into a **single** `dist/index.js` (esbuild): the core cache-busts only the entry file when it reloads an updated recipe, so a multi-file `dist/` would keep running the old version of every other file until Sowel restarts (core issue mchacher/sowel#1073). Keep it one file. Vitest with fake timers. ESLint + Prettier as in the core. `console.*` is an error: log through `ctx.log` / `ctx.logger`.
 
 ```bash
 npm install
