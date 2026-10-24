@@ -2,12 +2,12 @@
 
 Recipe id `smart-socket-heating`.
 
-Heats a room through a smart socket for [Sowel](https://docs.sowel.org): an electric radiator plugged into a socket (core `switch`), a temperature sensor in the room, the presence the zone's motion sensors give.
+Heats a room through a smart socket for [Sowel](https://docs.sowel.org): an electric radiator plugged into a socket (core `switch`). Everything comes from the room (the recipe's zone): the presence its motion sensors give, the temperature its sensors read, the sockets and buttons it holds.
 
 - **Comfort** while someone is in the room, **eco** after a time without motion, an optional **night** setpoint over a time window.
 - **Cocoon**: a warmer setpoint switched on by a tap on the tile or a press on a button, and off by the next press, an absence, the start of the night window or another mode.
-- **On/off regulation** from the sensor, ±0.2 °C around the setpoint, at least 5 minutes between two switches.
-- **Safety**: the sockets are cut at 25 °C, and when the sensor has been silent for 90 minutes.
+- **On/off regulation** from the room's temperature (the average of its sensors), ±0.2 °C around the setpoint, at least 5 minutes between two switches.
+- **Safety**: the sockets are cut at 25 °C, and when no sensor of the room has reported for 90 minutes.
 - A socket switched by hand is left alone until the room has been empty for the absence delay.
 - A **Dashboard tile** shows the setpoint, the temperature and whether the radiator heats, with an auto / cocoon / comfort / eco / off control. From auto, one tap starts cocoon.
 
@@ -18,18 +18,17 @@ Heats a room through a smart socket for [Sowel](https://docs.sowel.org): an elec
 
 ## Parameters
 
-| Parameter          | Default | Meaning                                                 |
-| ------------------ | ------- | ------------------------------------------------------- |
-| Zone               | current | The zone whose motion sensors give the presence         |
-| Temperature sensor | —       | The room's temperature                                  |
-| Heaters            | —       | The sockets feeding the radiators                       |
-| Comfort (°C)       | 20      | Setpoint while someone is there                         |
-| Eco (°C)           | 17      | Setpoint after the absence delay                        |
-| Absence delay      | 30m     | Time without motion before the room counts as empty     |
-| Night start / end  | —       | Optional night window (may cross midnight)              |
-| Night (°C)         | —       | Setpoint during the night window, whatever the presence |
-| Cocoon (°C)        | —       | Cocoon setpoint; without it, cocoon is not offered      |
-| Cocoon buttons     | —       | Buttons whose press switches cocoon on and off          |
+| Parameter         | Default | Meaning                                                 |
+| ----------------- | ------- | ------------------------------------------------------- |
+| Zone              | current | The room: its motion and temperature sensors are used   |
+| Heaters           | —       | The room's sockets feeding the radiators                |
+| Comfort (°C)      | 20      | Setpoint while someone is there                         |
+| Eco (°C)          | 17      | Setpoint after the absence delay                        |
+| Absence delay     | 30m     | Time without motion before the room counts as empty     |
+| Night start / end | —       | Optional night window (may cross midnight)              |
+| Night (°C)        | —       | Setpoint during the night window, whatever the presence |
+| Cocoon (°C)       | —       | Cocoon setpoint; without it, cocoon is not offered      |
+| Cocoon buttons    | —       | The room's buttons switching cocoon on and off          |
 
 ## Development
 

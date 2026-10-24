@@ -35,17 +35,17 @@ Two facts measured on the installation shape the recipe:
 
 ## Parameters (slots)
 
-| Slot                | Type                         | Required | Default | Meaning                                                        |
-| ------------------- | ---------------------------- | -------- | ------- | -------------------------------------------------------------- |
-| `zone`              | zone                         | yes      | current | The zone whose aggregated motion is the presence               |
-| `temperatureSensor` | equipment with `temperature` | yes      | —       | The room's temperature (any zone)                              |
-| `heaters`           | equipment `switch`, list     | yes      | —       | The sockets feeding the radiators, each with a `state` order   |
-| `comfortTemp`       | number °C, 5–24              | yes      | 20      | Setpoint while someone is there                                |
-| `ecoTemp`           | number °C, 5–24              | yes      | 17      | Setpoint after `timeout` without motion                        |
-| `timeout`           | duration                     | yes      | 30m     | Time without motion before the room counts as empty            |
-| `nightStart`        | time                         | no       | —       | Start of the night window (HH:MM)                              |
-| `nightEnd`          | time                         | no       | —       | End of the night window (HH:MM); the window may cross midnight |
-| `nightTemp`         | number °C, 5–24              | no       | —       | Setpoint during the night window, whatever the presence        |
+| Slot                | Type                         | Required | Default | Meaning                                                                                                |
+| ------------------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------ |
+| `zone`              | zone                         | yes      | current | The zone whose aggregated motion is the presence                                                       |
+| `temperatureSensor` | equipment with `temperature` | yes      | —       | The room's temperature, in the recipe's zone — replaced by the zone's own sensors in v0.3.0 (spec 003) |
+| `heaters`           | equipment `switch`, list     | yes      | —       | The sockets feeding the radiators, each with a `state` order                                           |
+| `comfortTemp`       | number °C, 5–24              | yes      | 20      | Setpoint while someone is there                                                                        |
+| `ecoTemp`           | number °C, 5–24              | yes      | 17      | Setpoint after `timeout` without motion                                                                |
+| `timeout`           | duration                     | yes      | 30m     | Time without motion before the room counts as empty                                                    |
+| `nightStart`        | time                         | no       | —       | Start of the night window (HH:MM)                                                                      |
+| `nightEnd`          | time                         | no       | —       | End of the night window (HH:MM); the window may cross midnight                                         |
+| `nightTemp`         | number °C, 5–24              | no       | —       | Setpoint during the night window, whatever the presence                                                |
 
 Fixed in the code: hysteresis ±0.2 °C, minimum cycle 5 min, maximum temperature 25 °C, sensor silent after 90 min.
 
@@ -117,7 +117,7 @@ Validation (the instance is refused with a clear message):
 | Restart while the room is occupied          | Still occupied until `timeout` after the persisted last motion                         |
 | Restart during a manual hold                | The hold is kept                                                                       |
 | Temperature exactly on setpoint ± 0.2       | ≤ / ≥ apply: on at exactly setpoint − 0.2, off at exactly setpoint + 0.2               |
-| Sensor in another zone                      | Allowed (`crossZone`)                                                                  |
+| Sensor in another zone                      | No sensor slot since v0.3.0 (spec 003): the zone's sensors are used                    |
 | Instance disabled while heating             | Sockets left as they are; the radiator's own thermostat caps the room                  |
 
 ## Docs delta

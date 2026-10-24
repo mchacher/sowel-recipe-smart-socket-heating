@@ -6,7 +6,6 @@ const MIN = 60_000;
 
 const PARAMS = {
   zone: "zone",
-  temperatureSensor: "sensor",
   heaters: ["socket"],
   comfortTemp: "20",
   ecoTemp: "17",
@@ -68,9 +67,12 @@ describe("validation", () => {
     expect(validate(world, { heaters: ["pilot"] })).toThrow(/not a switch/);
   });
 
-  it("refuses a sensor without temperature", () => {
-    const world = office().add({ id: "pir", name: "PIR", type: "sensor", data: {}, orders: [] });
-    expect(validate(world, { temperatureSensor: "pir" })).toThrow(/no temperature/);
+  it("refuses a zone without a temperature sensor (spec 003)", () => {
+    const world = new FakeWorld()
+      .socket("socket", { temperature: 30 })
+      .add({ id: "pir", name: "PIR", type: "sensor", data: { occupancy: false }, orders: [] })
+      .sensor(19, "elsewhere", "kitchen");
+    expect(validate(world, {})).toThrow(/no temperature sensor/);
   });
 
   it("refuses eco above comfort", () => {
@@ -368,7 +370,10 @@ describe("instance", () => {
     world.temp(18.4);
     await flush();
     expect(world.stateOf()).toBe(true);
-    const sensorLogs = world.logs.filter((l) => l.message.startsWith("THR_BUREAU"));
+    const sensorLogs = world.logs.filter(
+      (l) =>
+        l.message.includes("Température de la pièce") || l.message.startsWith("Aucune température"),
+    );
     expect(sensorLogs.map((l) => l.level)).toEqual(["warn", "info"]);
   });
 
@@ -656,5 +661,54 @@ describe("cocoon (spec 002)", () => {
     expect(validate({ cocoonTemp: "30" })).toThrow(/Cocoon must be/);
     expect(validate({ cocoonTemp: "23" })).not.toThrow();
     expect(validate({ cocoonTemp: "", buttons: [] })).not.toThrow();
+  });
+});
+
+describe("the room's temperature (spec 003)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 24, 12, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("averages the room's sensors, its sub-zones included", async () => {
+    const world = office(19).sensor(20, "s2").sensor(21, "s3", "desk");
+    world.childZones.push("desk");
+    world.zone.motion = true;
+    await start(world);
+    expect(world.state.get("summary")).toMatch(/^Confort 20° · 20°/);
+  });
+
+  it("ignores the other zones and the sockets' own temperature", async () => {
+    const world = new FakeWorld()
+      .sensor(19)
+      .sensor(30, "kitchen", "kitchen")
+      .socket("socket", { temperature: 45 });
+    world.zone.motion = true;
+    await start(world);
+    expect(world.state.get("summary")).toMatch(/^Confort 20° · 19°/);
+  });
+
+  it("follows a reading of any sensor of the room", async () => {
+    const world = office(19).sensor(19, "s2");
+    world.zone.motion = true;
+    await start(world);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    world.temp(21, "s2");
+    await flush();
+    expect(world.state.get("summary")).toMatch(/· 20°/);
+  });
+
+  it("drops a sensor gone quiet from the average", async () => {
+    const world = office(19).sensor(23, "s2");
+    world.zone.motion = true;
+    await start(world);
+    for (let i = 0; i < 10; i++) {
+      await vi.advanceTimersByTimeAsync(10 * MIN);
+      world.temp(19);
+    }
+    await flush();
+    expect(world.state.get("summary")).toMatch(/· 19°/);
+    expect(world.state.get("alert")).toBeUndefined();
   });
 });

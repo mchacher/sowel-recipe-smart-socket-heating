@@ -64,6 +64,7 @@ export interface Equipment {
   id: string;
   name: string;
   type: string;
+  zoneId: string;
 }
 
 export interface DataBindingValue {
@@ -80,6 +81,7 @@ export interface OrderBindingLike {
 
 export interface EquipmentManager {
   getById(id: string): Equipment | null;
+  getByZone(zoneId: string): Equipment[];
   getDataBindingsWithValues(id: string): DataBindingValue[];
   getOrderBindingsWithDetails(id: string): OrderBindingLike[];
 }
@@ -119,6 +121,8 @@ export interface RecipeContext {
   eventBus: { onType(type: string, handler: (event: unknown) => void): () => void };
   equipmentManager: EquipmentManager;
   zoneAggregator: { getByZoneId(zoneId: string): ZoneAggregatedData | null };
+  /** `getDescendantIds` returns the zone itself and every zone below it. */
+  zoneManager: { getDescendantIds(zoneId: string): string[] };
   logger: RecipeLogger;
   state: {
     get(key: string): unknown;

@@ -4,7 +4,7 @@ Guidance for Claude Code (and any AI agent) working on `sowel-recipe-smart-socke
 
 ## What this is
 
-A Sowel **recipe package**: it heats a room through one or more **smart sockets** (core `switch` equipments) feeding electric radiators, from a **temperature sensor**. The setpoint follows the **presence** the zone aggregates (comfort while someone is there, eco after an absence timeout, an optional night setpoint). The regulation is on/off with a hysteresis; the radiator's own thermostat stays as a physical ceiling.
+A Sowel **recipe package**: it heats a room through one or more **smart sockets** (core `switch` equipments) feeding electric radiators, from the **temperature** of the room. Everything comes from the recipe's zone (spec 003): the temperature is the average of its sensors' live readings, the setpoint follows the **presence** the zone aggregates, and the form offers only its sockets and buttons (comfort while someone is there, eco after an absence timeout, an optional night setpoint). The regulation is on/off with a hysteresis; the radiator's own thermostat stays as a physical ceiling.
 
 First installation (2026-10-24): the owner's office — a Tuya IH-K009 sensor (reports every 30 min plus on change), a SONOFF S60ZBTPF socket with power metering, two PIR sensors.
 
@@ -22,7 +22,7 @@ The core repo is expected as a sibling directory (`../sowel`).
 
 ## Non-negotiable rules
 
-- **Equipments by contract alias, never by vendor key.** The recipe reads `temperature` on the sensor, `state` and `power` on the sockets, and orders `state`. A missing concept is a core spec, never a workaround here.
+- **Equipments by contract alias, never by vendor key.** The recipe reads `temperature` on the zone's equipments, `state` and `power` on the sockets, and orders `state`. A missing concept is a core spec, never a workaround here.
 - **Safety first.** Above the maximum temperature, or with a silent sensor, the sockets are off. These cuts never wait for the minimum cycle.
 - **Never fight the user.** A socket switched by someone else (Sowel UI, its own button, another automation) is left alone until the next absence.
 - **`dispatchOrder` failures come back as `{ success: false }`**, not as a throw: always read the result.
