@@ -133,6 +133,13 @@ describe("inWindow", () => {
   });
 });
 
+describe("decide — the hottest reading (spec 003)", () => {
+  it("cuts when one reading of the room reaches 25 °C, whatever the average", () => {
+    expect(decide(snap({ temperature: 24, hottest: 26 }))).toMatchObject({ status: "safety" });
+    expect(decide(snap({ temperature: 19.5, hottest: 24.9 })).status).toBe("comfort");
+  });
+});
+
 describe("decide — cocoon (spec 002 FR2)", () => {
   const sp = { comfortTemp: 20, ecoTemp: 17, night: NIGHT, cocoonTemp: 23 };
 

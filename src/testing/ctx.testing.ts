@@ -10,6 +10,7 @@ export interface FakeEquipment {
   id: string;
   name: string;
   type: string;
+  zoneId: string;
   data: Record<string, unknown>;
   lastUpdated: Record<string, string | null>;
   orders: { alias: string; enumValues?: string[] }[];
@@ -35,22 +36,32 @@ export class FakeWorld {
   readonly logs: { message: string; level: string }[] = [];
   readonly state = new Map<string, unknown>();
   readonly zone = { motion: false, motionSensors: 2 };
+  /** Zones below "zone" (spec 003: their sensors count too). */
+  readonly childZones: string[] = [];
   private readonly handlers = new Map<string, ((e: unknown) => void)[]>();
   /** Scripted answers: a result, "throw", or undefined for success + reflect. */
   answer: (call: OrderCall) => DispatchResult | "throw" | undefined = () => undefined;
 
   add(
-    e: Omit<FakeEquipment, "lastUpdated"> & { lastUpdated?: FakeEquipment["lastUpdated"] },
+    e: Omit<FakeEquipment, "lastUpdated" | "zoneId"> & {
+      lastUpdated?: FakeEquipment["lastUpdated"];
+      zoneId?: string;
+    },
   ): this {
     const lastUpdated: Record<string, string | null> = {};
     for (const alias of Object.keys(e.data)) lastUpdated[alias] = coreInstant(Date.now());
-    this.equipments.set(e.id, { ...e, lastUpdated: { ...lastUpdated, ...e.lastUpdated } });
+    this.equipments.set(e.id, {
+      ...e,
+      zoneId: e.zoneId ?? "zone",
+      lastUpdated: { ...lastUpdated, ...e.lastUpdated },
+    });
     return this;
   }
 
-  sensor(temperature: number | null = 19, id = "sensor"): this {
+  sensor(temperature: number | null = 19, id = "sensor", zoneId = "zone"): this {
     return this.add({
       id,
+      zoneId,
       name: "THR_BUREAU",
       type: "sensor",
       data: { temperature, humidity: 50 },
@@ -135,8 +146,12 @@ export class FakeWorld {
       equipmentManager: {
         getById: (id) => {
           const e = this.equipments.get(id);
-          return e ? { id: e.id, name: e.name, type: e.type } : null;
+          return e ? { id: e.id, name: e.name, type: e.type, zoneId: e.zoneId } : null;
         },
+        getByZone: (zoneId) =>
+          [...this.equipments.values()]
+            .filter((e) => e.zoneId === zoneId)
+            .map((e) => ({ id: e.id, name: e.name, type: e.type, zoneId: e.zoneId })),
         getDataBindingsWithValues: (id) => {
           const e = this.equipments.get(id);
           return Object.entries(e?.data ?? {}).map(([alias, value]) => ({
@@ -146,6 +161,9 @@ export class FakeWorld {
           }));
         },
         getOrderBindingsWithDetails: (id) => this.equipments.get(id)?.orders ?? [],
+      },
+      zoneManager: {
+        getDescendantIds: (zoneId) => (zoneId === "zone" ? ["zone", ...this.childZones] : [zoneId]),
       },
       zoneAggregator: {
         getByZoneId: (zoneId) => (zoneId === "zone" ? { ...this.zone } : null),

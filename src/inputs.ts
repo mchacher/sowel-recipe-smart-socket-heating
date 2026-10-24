@@ -1,14 +1,18 @@
 /**
- * Spec 001 — reads the sensor and the sockets by contract alias.
+ * Spec 001, 003 — reads the zone's temperature and the sockets by contract alias.
  */
 
+import { SILENT_MS } from "./decide.js";
 import { DRAWING_W, type Heat } from "./summary.js";
 import type { DataBindingValue, EquipmentManager } from "./sowel-types.js";
 
 export interface SensorView {
+  /** Average of the zone's live readings; null when none is live. */
   temperature: number | null;
-  /** Epoch ms of the last report (changed or not). */
+  /** Epoch ms of the latest of those readings (reported, changed or not). */
   at: number | null;
+  /** The hottest live reading: the safety cut looks at it, not at the average. */
+  hottest: number | null;
 }
 
 export interface SocketView {
@@ -46,10 +50,42 @@ function binding(bindings: DataBindingValue[], alias: string): DataBindingValue 
   return bindings.find((b) => b.alias === alias);
 }
 
-export function readSensor(em: EquipmentManager, id: string): SensorView {
-  const b = binding(em.getDataBindingsWithValues(id), "temperature");
-  const temperature = num(b?.value);
-  return { temperature, at: temperature === null ? null : parseInstant(b?.lastUpdated) };
+/**
+ * Spec 003 — the equipments of these zones that read a `temperature`, every
+ * socket excepted: a plug's own device temperature is not the room's.
+ */
+export function temperatureSources(
+  em: EquipmentManager,
+  zoneIds: string[],
+  exclude: string[],
+): string[] {
+  return zoneIds
+    .flatMap((z) => em.getByZone(z))
+    .filter((e) => e.type !== "switch" && !exclude.includes(e.id))
+    .filter((e) => binding(em.getDataBindingsWithValues(e.id), "temperature") !== undefined)
+    .map((e) => e.id);
+}
+
+/**
+ * Spec 003 FR2 — the room's temperature: the average of its sources' readings
+ * reported within the silent delay. A source gone quiet drops out instead of
+ * holding the average on its last value; none left is a silent sensor (FR7).
+ */
+export function readZoneTemperature(em: EquipmentManager, ids: string[], now: number): SensorView {
+  const live: { value: number; at: number }[] = [];
+  for (const id of ids) {
+    const b = binding(em.getDataBindingsWithValues(id), "temperature");
+    const value = num(b?.value);
+    const at = parseInstant(b?.lastUpdated);
+    if (value !== null && at !== null && now - at < SILENT_MS) live.push({ value, at });
+  }
+  if (live.length === 0) return { temperature: null, at: null, hottest: null };
+  const sum = live.reduce((s, r) => s + r.value, 0);
+  return {
+    temperature: Math.round((sum / live.length) * 100) / 100,
+    at: Math.max(...live.map((r) => r.at)),
+    hottest: Math.max(...live.map((r) => r.value)),
+  };
 }
 
 export function readSocket(em: EquipmentManager, id: string): SocketView {

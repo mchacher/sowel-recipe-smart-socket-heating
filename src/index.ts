@@ -1,8 +1,8 @@
 /**
  * Sowel recipe: smart-socket-heating (spec 001)
  *
- * Smart sockets feeding radiators, switched on/off from a temperature sensor
- * around a setpoint that follows the zone's presence: comfort while someone
+ * Smart sockets feeding radiators, switched on/off from the zone's temperature
+ * (spec 003) around a setpoint that follows the zone's presence: comfort while someone
  * is there, eco after an absence, an optional night setpoint, a cocoon boost
  * from the tile or a button (spec 002). Cuts at 25 °C and on a silent sensor;
  * stands back when someone else switches a socket.
@@ -18,7 +18,14 @@ import {
   type Setpoints,
 } from "./decide.js";
 import { ACTIONS, DESCRIPTION, I18N, NAME, SLOTS } from "./i18n.js";
-import { heatOf, parseInstant, parseOn, readSensor, readSocket } from "./inputs.js";
+import {
+  heatOf,
+  parseInstant,
+  parseOn,
+  readSocket,
+  readZoneTemperature,
+  temperatureSources,
+} from "./inputs.js";
 import { emptyAt, holdEnded, isOccupied } from "./presence.js";
 import { SocketControl } from "./sockets.js";
 import { degrees, summaryOf } from "./summary.js";
@@ -32,7 +39,7 @@ import type {
 
 export const RECIPE_ID = "smart-socket-heating";
 export const TICK_MS = 60_000;
-export const ALERT_SILENT = "Capteur de température muet";
+export const ALERT_SILENT = "Température de la pièce muette";
 /** While motion lasts, its time is persisted at most this often. */
 export const MOTION_PERSIST_MS = 5 * 60_000;
 /** Spec 002 FR3 — a button report this soon after a press is the same press. */
@@ -46,7 +53,6 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface Params {
   zoneId: string;
-  sensorId: string;
   heaterIds: string[];
   buttonIds: string[];
   timeoutMs: number;
@@ -85,7 +91,6 @@ export function readParams(p: Record<string, unknown>): Params {
       : null;
   return {
     zoneId: String(p.zone ?? ""),
-    sensorId: String(p.temperatureSensor ?? ""),
     heaterIds: idList(p.heaters),
     buttonIds: idList(p.buttons),
     timeoutMs: parseDuration(p.timeout) ?? 30 * 60_000,
@@ -109,11 +114,6 @@ export function validateParams(p: Record<string, unknown>, ctx: RecipeContext): 
   const em = ctx.equipmentManager;
   if (!present(p.zone)) throw new Error("A zone is required");
 
-  const sensor = em.getById(String(p.temperatureSensor ?? ""));
-  if (!sensor) throw new Error("Temperature sensor not found");
-  if (!em.getDataBindingsWithValues(sensor.id).some((b) => b.alias === "temperature"))
-    throw new Error(`"${sensor.name}" has no temperature`);
-
   const heaterIds = idList(p.heaters);
   if (heaterIds.length === 0) throw new Error("At least one heater is required");
   for (const id of heaterIds) {
@@ -123,6 +123,9 @@ export function validateParams(p: Record<string, unknown>, ctx: RecipeContext): 
     if (!em.getOrderBindingsWithDetails(id).some((o) => o.alias === "state"))
       throw new Error(`"${eq.name}" has no "state" order`);
   }
+  const zoneIds = ctx.zoneManager.getDescendantIds(String(p.zone));
+  if (temperatureSources(em, zoneIds, heaterIds).length === 0)
+    throw new Error("The zone has no temperature sensor");
 
   const comfort = checkTemp("Comfort", p.comfortTemp);
   const eco = checkTemp("Eco", p.ecoTemp);
@@ -198,7 +201,7 @@ class Instance implements RecipeInstanceHandle {
     private readonly ctx: RecipeContext,
   ) {
     const em = ctx.equipmentManager;
-    for (const id of [p.sensorId, ...p.heaterIds, ...p.buttonIds])
+    for (const id of [...p.heaterIds, ...p.buttonIds])
       this.names.set(id, em.getById(id)?.name ?? id);
 
     const saved = ctx.state.get("mode");
@@ -347,7 +350,7 @@ class Instance implements RecipeInstanceHandle {
       this.onPress(e.equipmentId, e.value);
       return;
     }
-    if (e.equipmentId === this.p.sensorId && e.alias === "temperature") {
+    if (e.alias === "temperature" && this.isRoomSource(e.equipmentId)) {
       this.evaluate();
       return;
     }
@@ -361,6 +364,20 @@ class Instance implements RecipeInstanceHandle {
     } else if (e.alias === "power") {
       this.evaluate();
     }
+  }
+
+  /** Spec 003 — read at each use: an equipment moved into or out of the room counts at once. */
+  private temperatureSources(): string[] {
+    const zoneIds = this.ctx.zoneManager.getDescendantIds(this.p.zoneId);
+    return temperatureSources(this.ctx.equipmentManager, zoneIds, this.p.heaterIds);
+  }
+
+  private isRoomSource(id: string): boolean {
+    const zoneId = this.ctx.equipmentManager.getById(id)?.zoneId;
+    if (zoneId === undefined) return false;
+    // Cheap first: most temperature reports in the house come from other rooms.
+    if (!this.ctx.zoneManager.getDescendantIds(this.p.zoneId).includes(zoneId)) return false;
+    return this.temperatureSources().includes(id);
   }
 
   private startHold(id: string): void {
@@ -404,7 +421,7 @@ class Instance implements RecipeInstanceHandle {
     }
 
     const em = this.ctx.equipmentManager;
-    const sensor = readSensor(em, this.p.sensorId);
+    const sensor = readZoneTemperature(em, this.temperatureSources(), now);
     const occupied = isOccupied(this.motion, this.lastMotionAt, now, timeoutMs);
     const d = decide({
       now: new Date(now),
@@ -413,11 +430,11 @@ class Instance implements RecipeInstanceHandle {
       hold: this.hold,
       temperature: sensor.temperature,
       temperatureAt: sensor.at,
+      hottest: sensor.hottest,
       setpoints: this.p.setpoints,
     });
 
-    const silent =
-      sensor.temperature === null || sensor.at === null || now - sensor.at >= SILENT_MS;
+    const silent = sensor.temperature === null;
     // FR7 — a hold cuts nothing on a silent sensor: no alert raised then, only cleared.
     if (d.status !== "manual" || !silent) this.trackSensor(silent);
     this.logDecision(d, occupied, sensor.temperature);
@@ -446,16 +463,15 @@ class Instance implements RecipeInstanceHandle {
   private trackSensor(silent: boolean): void {
     if (silent === this.silent) return;
     this.silent = silent;
-    const name = this.names.get(this.p.sensorId) ?? this.p.sensorId;
     if (silent) {
       this.ctx.state.set("alert", ALERT_SILENT);
       this.ctx.log(
-        `${name} muet depuis ${minutes(SILENT_MS)} ou sans valeur : chauffage coupé`,
+        `Aucune température de la pièce depuis ${minutes(SILENT_MS)} : chauffage coupé`,
         "warn",
       );
     } else {
       this.ctx.state.delete("alert");
-      this.ctx.log(`${name} de nouveau disponible`);
+      this.ctx.log("Température de la pièce de nouveau disponible");
     }
   }
 

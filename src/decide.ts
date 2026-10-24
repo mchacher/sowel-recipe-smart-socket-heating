@@ -44,6 +44,8 @@ export interface Snapshot {
   temperature: number | null;
   /** Epoch ms of the sensor's last report; null when unknown. */
   temperatureAt: number | null;
+  /** Spec 003 — the hottest of the room's readings; the safety cut uses it when given. */
+  hottest?: number | null;
   setpoints: Setpoints;
 }
 
@@ -87,7 +89,8 @@ export function setpointOf(snap: Snapshot): {
 
 export function decide(snap: Snapshot): Decision {
   const t = snap.temperature;
-  if (t !== null && t >= MAX_TEMP)
+  const hot = snap.hottest ?? t;
+  if (hot !== null && hot >= MAX_TEMP)
     return { status: "safety", setpoint: null, want: "off", immediate: true };
   // A person's switch wins over the off mode too (FR9); picking a mode ends the hold (FR10).
   if (snap.hold) return { status: "manual", setpoint: null, want: "leave", immediate: false };

@@ -25,10 +25,10 @@ The owner also asked to rename the recipe "Chauffage sur prise". Only the displa
 
 ## Parameters (new slots, group "cocoon")
 
-| Slot         | Type                     | Required | Meaning                                                 |
-| ------------ | ------------------------ | -------- | ------------------------------------------------------- |
-| `cocoonTemp` | number °C, 5–24          | no       | The cocoon setpoint. Without it, cocoon is not offered. |
-| `buttons`    | equipment `button`, list | no       | Buttons whose press toggles cocoon (any zone)           |
+| Slot         | Type                     | Required | Meaning                                                               |
+| ------------ | ------------------------ | -------- | --------------------------------------------------------------------- |
+| `cocoonTemp` | number °C, 5–24          | no       | The cocoon setpoint. Without it, cocoon is not offered.               |
+| `buttons`    | equipment `button`, list | no       | Buttons whose press toggles cocoon (the recipe's zone since spec 003) |
 
 Validation: `buttons` without `cocoonTemp` is refused; each button exists and has an `action` data binding; `cocoonTemp` in 5–24.
 
