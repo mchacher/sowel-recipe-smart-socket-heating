@@ -106,6 +106,8 @@ export const ACTIONS: RecipeActionDef[] = [
       { value: "eco", label: "Eco" },
       { value: "off", label: "Off" },
     ],
+    // Spec 006 — the sockets' Dashboard cards show the mode (core spec 201).
+    targets: ["heaters"],
   },
 ];
 

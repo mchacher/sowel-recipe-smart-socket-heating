@@ -38,6 +38,8 @@ describe("createRecipe", () => {
       "off",
     ]);
     expect(r.tile).toEqual({ icon: "Flame", actions: ["set_mode"] });
+    // Spec 006 — the mode shows on the sockets' cards, not on the buttons'.
+    expect(r.actions?.[0].targets).toEqual(["heaters"]);
     expect(r.i18n?.fr.name).toBe("Chauffage sur prise");
     expect(r.name).toBe("Socket Heating");
   });

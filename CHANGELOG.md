@@ -2,6 +2,12 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.5.0
+
+The mode on the sockets' cards (spec 006).
+
+- **The Dashboard card of each socket shows the recipe's mode** (Auto, Cocoon, Comfort, Eco, Off) as a small pill under its title, with a Sowel core carrying spec 201. The cocoon buttons' cards show nothing. An older core ignores it.
+
 ## v0.4.0
 
 Confirmed presence (spec 005).
