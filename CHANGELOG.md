@@ -2,6 +2,12 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.5.1
+
+Cocoon offered only when configured (spec 007).
+
+- **The cocoon option declares that it needs a cocoon temperature.** The Sowel core offers it on the tile, the zone page and the cards only when one is set, without knowing this recipe's settings by name (core issue mchacher/sowel#1210). Nothing changes on screen: an older core already hid it.
+
 ## v0.5.0
 
 The mode on the sockets' cards (spec 006).

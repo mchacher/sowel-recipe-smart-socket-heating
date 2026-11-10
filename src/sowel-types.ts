@@ -33,7 +33,8 @@ export interface RecipeActionDef {
   id: string;
   type: "cycle";
   stateKey: string;
-  options: { value: string; label: string }[];
+  /** `requiresParam` (core #1210): offered only when that instance parameter is set. */
+  options: { value: string; label: string; requiresParam?: string }[];
   /** Core spec 201 — equipment slots the mode applies to; their Dashboard cards show it. */
   targets?: string[];
 }
