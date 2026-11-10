@@ -34,6 +34,8 @@ export interface RecipeActionDef {
   type: "cycle";
   stateKey: string;
   options: { value: string; label: string }[];
+  /** Core spec 201 — equipment slots the mode applies to; their Dashboard cards show it. */
+  targets?: string[];
 }
 
 export interface RecipeTileDef {
