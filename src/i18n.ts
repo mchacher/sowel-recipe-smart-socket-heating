@@ -101,7 +101,8 @@ export const ACTIONS: RecipeActionDef[] = [
     options: [
       { value: "auto", label: "Auto" },
       // Right after auto: one tap on the tile starts it (spec 002 FR1).
-      { value: "cocoon", label: "Cocoon" },
+      // Offered only with a cocoon setpoint (spec 007, core #1210).
+      { value: "cocoon", label: "Cocoon", requiresParam: "cocoonTemp" },
       { value: "comfort", label: "Comfort" },
       { value: "eco", label: "Eco" },
       { value: "off", label: "Off" },

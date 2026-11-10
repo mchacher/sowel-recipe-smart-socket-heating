@@ -40,6 +40,11 @@ describe("createRecipe", () => {
     expect(r.tile).toEqual({ icon: "Flame", actions: ["set_mode"] });
     // Spec 006 — the mode shows on the sockets' cards, not on the buttons'.
     expect(r.actions?.[0].targets).toEqual(["heaters"]);
+    // Spec 007 — cocoon is offered only with a cocoon setpoint.
+    expect(r.actions?.[0].options.find((o) => o.value === "cocoon")?.requiresParam).toBe(
+      "cocoonTemp",
+    );
+    expect(r.actions?.[0].options.filter((o) => o.requiresParam).length).toBe(1);
     expect(r.i18n?.fr.name).toBe("Chauffage sur prise");
     expect(r.name).toBe("Socket Heating");
   });
